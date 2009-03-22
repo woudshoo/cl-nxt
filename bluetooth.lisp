@@ -1,20 +1,13 @@
-(defvar *command-table* nil) 
-
-(defun fill-command-table ()
-  (def-nxt-command 'get-firmware-version #x01 #x88)
-  (def-nxt-command 'get-device-info      #x01 #x9b)
-  (def-nxt-command 'find-first           #x01 #x86 :file-name '(string 2 21))
-  (def-nxt-command 'find-next            #x01 #x87 :handle '(byte 2))
-  (def-nxt-command 'close                #x01 #x84 :handle '(byte 2))
-  (def-nxt-command 'play-tone            #x00 #x03 :frequency '(uword 2) :duration '(uword 4))
-  (def-nxt-command 'get-input-values     #x00 #x07 :port '(byte 2))
-  (def-nxt-command 'get-output-state     #x00 #x06 :port '(byte 2))
-  (def-nxt-command 'get-battery-level    #x00 #x0b)
-  (def-nxt-command 'stop-sound-playback  #x00 #x0c)
-  (def-nxt-command 'set-input-mode       #x00 #x05 :port '(byte 2) 
-		   :sensor-type '(byte 3) :sensor-mode '(byte 4))
-  (def-nxt-command 'message-read         #x00 #x13 
-		   :remote-inbox '(byte 2) :local-inbox '(byte 3) :remove '(byte 4)))
+;
+;; Specification:
+;;
+;;     (byte position)   - byte = 8bits
+;;     (uword position)  - uword = 16bits, Little endian
+;;     (string position end-position) - string is 0 terminated put in the buffer.
+;;     (ulong position)  - ulong = 32bits, Little endian
+;;     (data position)   - This should be the last field and the length determines how
+;;                         long the command is, or when it is a reply, the
+;;                         length of the reply determins the length of the data
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; FUNCTIONS THAT HELP DESTRUCTURING THE SPECIFICATION OF THE COMMANDS
@@ -80,10 +73,11 @@ The result is something that looks like
 	      (byte `(write-byte-to-command data-vector ,key ,(second spec)))
 	      (string `(write-string-to-command data-vector ,key ,(second spec) ,(third spec)))
 	      (uword `(write-uword-to-command data-vector ,key ,(second spec)))
-	      (t "Help"))))
+	      (t (error "Unknow type ~S in specification" (type-of-spec spec))))))
 	(write-to-nxt data-vector)
 	,(when (reply-expected-for-type-code type-code)
-	       '(read-nxt-reply))))))
+	       '(let ((reply (read-nxt-reply)))
+		 (parse-nxt-reply (aref reply 1) reply)))))))
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
   (apply #'create-nxt-command-form name name-code type-code rest))
@@ -95,23 +89,30 @@ The result is something that looks like
 (def-nxt-command get-device-info      #x01 #x9b)
 (def-nxt-command find-first           #x01 #x86 file-name (string 2 21))
 (def-nxt-command find-next            #x01 #x87 handle    (byte 2))
-(def-nxt-command close                #x01 #x84 handle     (byte 2))
-(def-nxt-command play-tone            #x00 #x03 frequency  (uword 2)       duration (uword 4))
-(def-nxt-command get-input-values     #x00 #x07 port       (byte 2))
-(def-nxt-command get-output-state     #x00 #x06 port       (byte 2))
-(def-nxt-command get-battery-level    #x00 #x0b)
-(def-nxt-command stop-sound-playback  #x00 #x0c)
-(def-nxt-command set-input-mode       #x00 #x05 port       (byte 2) 
-		 sensor-type          (byte 3)  sensor-mode (byte 4))
-(def-nxt-command message-read         #x00 #x13 
-		 remote-inbox         (byte 2)  local-inbox (byte 3) remove (byte 4))
+(def-nxt-command nxt-close                #x01 #x84 handle     (byte 2))
 
+
+;; (def-nxt-command get-input-values     #x00 #x07 port       (byte 2))
+;; (def-nxt-command get-output-state     #x00 #x06 port       (byte 2))
+;; (def-nxt-command get-battery-level    #x00 #x0b)
+;; (def-nxt-command stop-sound-playback  #x00 #x0c)
+;; (def-nxt-command set-input-mode       #x00 #x05 port       (byte 2) 
+;; 		 sensor-type          (byte 3)  sensor-mode (byte 4))
+;; (def-nxt-command message-read         #x00 #x13 
+;; 		 remote-inbox         (byte 2)  local-inbox (byte 3) remove (byte 4))
+
+;; (def-nxt-command get-device-info      #x01 #x9b)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; HELPER FUNCTIONS TO BUILD THE COMMAND
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun write-byte-to-command (vector value location)
   (assert (arrayp vector) (vector) "First argument should be a vector!")
   (setf (aref vector location) value))
+
+(defun read-byte-from-reply (vector location)
+  (assert (arrayp vector) (vector) "First argument should be a vector!")
+  (aref vector location))
+
 
 (defun write-string-to-command (vector value start end)
   "Write the string `value' in the result at the byte range
@@ -124,11 +125,33 @@ that the space we write in is already zeroed out."
      :do
      (setf (aref vector index) (char-code char))))
 
+(defun read-string-from-reply (vector start end)
+  "Reads the zero terminates tring from vector."
+  (with-output-to-string (s)
+    (loop :for index :from start :below end
+       :for char = (aref vector index)
+       :until (eql char 0)
+       :do
+       (write-char (code-char char) s))))
+
 (defun write-uword-to-command (vector value location)
   (setf (aref vector location) (ldb (byte 8 0) value))
   (setf (aref vector (1+ location)) (ldb (byte 8 8) value)))
 
-
+(defun read-uword-from-reply (vector location)
+  (let ((result 0))
+    (setf (ldb (byte 8 0) result) (aref vector location))
+    (setf (ldb (byte 8 8) result) (aref vector (1+ location)))
+    result))
+      
+(defun read-ulong-from-reply (vector location)
+  (let ((result 0))
+    (setf (ldb (byte 8 0) result) (aref vector location))
+    (setf (ldb (byte 8 8) result) (aref vector (1+ location)))
+    (setf (ldb (byte 8 16) result) (aref vector (+ 2 location)))
+    (setf (ldb (byte 8 24) result) (aref vector (+ 3 location)))
+    result))
+    
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; CONNECTION
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -190,20 +213,168 @@ and send it over the wire, eh, air."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; LEFT OVER FROM OLD CODE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun send-to-nxt (command)
-  "Write command to nxt and read reply if a reply is expected."
-  (write-to-nxt command)
-  (when (reply-expected command)
-    (read-nxt-reply)))
-
-(defun reply-expected (command)
-  "Returns T if a reply is expected.
-A reply is expected if the bit in position 7 (MSB) is 0"
-  (eql 0 (ldb (byte 1 7) (aref command 0))))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; PARSING OUTPUT ???
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;; want something to specify the pattern of the output command
+;;
+;; (def-reply-package #x81 handle (byte 3) size (ulong 4))
+;; (def-reply-package #x 
+;; The expansion will give a generic method such as:
+;;
+;(defmethod parse-nxt-reply ((code (eql #x81)) (data vector))
+;  (list (cons 'handle (
+
+(defmacro def-reply-package (code &rest rest)
+  (list
+   'defmethod 'parse-nxt-reply 
+   (list (list 'code (list 'eql code))
+	 (list 'data 'vector))
+   (cons 'list
+    (loop :for  (key spec) :on (append (list 'status '(byte 2))  rest) :by #'cddr :collect
+       (list 'cons `(quote ,key)
+	     (case (type-of-spec spec)
+	       (byte `(read-byte-from-reply data ,(second spec)))
+	       (string `(read-string-from-reply data ,(second spec) ,(third spec)))
+	       (uword `(read-uword-from-reply data ,(second spec)))
+	       (ulong `(read-ulong-from-reply data ,(second spec)))
+	       (t (error "Unrecognized type ~S in specification" (type-of-spec spec)))))))))
+
+
+;; open read command
+(def-reply-package #x80 handle (byte 3)
+		        file-size (ulong 4))
+;; oen write command
+(def-reply-package #x81 handle (byte 3))
+;; read command
+;(def-reply-package #x82 handle (byte 3)
+;		        amount-read (uword 4)
+;			data (data 6))
+;; write command
+(def-reply-package #x83 handle (byte 3)
+		   amount-written-to-flash (uword 4))
+;; close command
+(def-reply-package #x84 handle (byte 3))
+;; delete command
+(def-reply-package #x85 file-name (string 3 22))
+;; find-first
+(def-reply-package #x86 handle (byte 3)
+		        file-name (string 4 23)
+			file-size (ulong 24))
+;; find-next
+(def-reply-package #x87 handle (byte 3)
+		        file-name (string 4 23)
+			file-size (ulong 24))
+;; Get firmware version
+(def-reply-package #x88 protocol-version-minor (byte 3)
+		        protocol-version-major (byte 4)
+                        firmware-version-minor (byte 5)
+                        firmware-version-major (byte 6))
+
+;; Get device info
+(def-reply-package #x9b 
+    nxt-name (string 3 17)
+    bluetooth-signal-strength (ulong 25)
+    free-flash (ulong 29))
+
+
+
+;;;; 
+;; MODULES
+;;;
+(def-nxt-command request-first-module    #x01 #x90 resource-name (string 2 21))
+(def-reply-package #x90 handle (byte 3) module-name (string 4 23)
+		   module-id (ulong 24)
+		   module-size (ulong 28)
+		   io-map-size (uword 32))
+
+(def-nxt-command request-next-module #x01 #x91 handle (byte 2))
+(def-reply-package #x91 handle (byte 3) module-name (string 4 23)
+		   module-id (ulong 24)
+		   module-size (ulong 28)
+		   io-map-size (uword 32))
+
+(def-nxt-command close-module-handle #x01 #x92 handle (byte 2))
+(def-reply-package #x92 handle (byte 3))
+
+;;;;
+;; DIRECT COMMANDS
+;;;;;
+(def-nxt-command start-program #x00 #x00 file-name (string 2 21))
+(def-reply-package #x00)
+
+(def-nxt-command stop-program  #00 #01)
+(def-reply-package #x01)
+
+(def-nxt-command play-sound-file #x00 #x02 loop (byte 2) file-name (string 3 22))
+(def-reply-package #x02)
+
+(def-nxt-command play-tone #x00 #x03 frequency (uword 2) duration (uword 4))
+(def-reply-package #x03)
+
+(def-nxt-command set-output-state #x00 #x04 
+		 output-port (byte 2) 
+		 power-set-point (byte 3)
+		 mode (byte 4)
+		 regulation-mode (byte 5)
+		 turn-ratio (byte 6) ;; needs to be sbyte, so this will fail with negative numebrs.
+		 run-state (byte 7)
+		 tacho-limit (ulong 8))
+(def-reply-package #x04)		 
+
+(def-nxt-command set-input-mode #x00 #x05
+		 input-port (byte 2)
+		 sensor-type (byte 3)
+		 sensor-mode (byte 4))
+(def-reply-package #x05)		 
+
+(def-nxt-command get-output-state #x00 #x06
+		 output-port (byte 2))
+(def-reply-package #x06
+    output-port (byte 3)
+    power-set-point (byte 4)
+    mode (byte 5)
+    regulation-mode (byte 6)
+    turn-ratio (byte 7) ;; needs to be sbyte
+    run-state (byte 8)
+    tacho-limit (ulong 9)
+    tacho-count (ulong 13) ;; should be slong
+    block-tacho-count (ulong 17) ;; should be slong)
+    rotation-count (ulong 21) ;; should be slong
+)
+
+(def-nxt-command get-input-values #x00 #x07 input-port (byte 2))
+(def-reply-package #x07
+    input-port (byte 3)
+    valid (byte 4)
+    calibrated (byte 5)
+    sensor-type (byte 6)
+    sensor-mode (byte 7)
+    raw-a/d-value (uword 8)
+    normalized-a/d-value (uword 10)
+    scaled-value (uword 12)  ;; should be sword
+    calibrated-value (uword 14) ;; should be sword
+)
+
+(def-nxt-command reset-input-scaled-value #x00 #x08 input-port (byte 2))
+(def-reply-package #x08)
+
+
+
+    
+
+		 
+    
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmethod parse-nxt-reply ((code t) (data vector))
+"Default fallback method."
+  data)
+   
+(defun value-of (key assoc)
+  (cdr (assoc key assoc)))
 
 (defun dump-message (message)
   (loop :for x :across message 
@@ -215,3 +386,24 @@ A reply is expected if the bit in position 7 (MSB) is 0"
 
 (defun handle (reply)
   (aref reply 3))
+
+
+
+;;;;;;;;; Higher level functions
+
+(defun find-all-files ()
+  (loop 
+     :for reply = (find-first :file-name "*.*") 
+     :then (find-next :handle (value-of 'handle reply))
+     :while (= (value-of 'status reply) 0)
+     :collect (value-of 'file-name reply)
+     :finally (nxt-close :handle (value-of 'handle reply))))
+     
+(defun find-all-modules ()
+  (loop 
+     :for reply = (request-first-module :resource-name "*.*") 
+     :then (request-next-module :handle (value-of 'handle reply))
+     :while (= (value-of 'status reply) 0)
+     :collect reply
+     :finally (close-module-handle :handle (value-of 'handle reply))))
+     
