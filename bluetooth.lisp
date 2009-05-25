@@ -1,3 +1,4 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Specification:
 ;;
 ;;     (ubyte position)  - byte = 8bits  (== byte)
@@ -20,7 +21,8 @@ Returns one of: 'ubyte, 'uword, 'string."
 (defun last-byte-of-spec (spec)
   "Returns the last byte in the command vector occupied by spec."
   (case (type-of-spec spec)
-    ('uword (+ 1 (second spec)))
+    (uword (+ 1 (second spec)))
+    (ulong (+ 3 (second spec)))
     (t (car (last spec)))))
     
 (defun command-length (command-spec)
@@ -73,6 +75,7 @@ The result is something that looks like
 	      (ubyte `(write-ubyte-to-command data-vector ,key ,(second spec)))
 	      (string `(write-string-to-command data-vector ,key ,(second spec) ,(third spec)))
 	      (uword `(write-uword-to-command data-vector ,key ,(second spec)))
+	      (ulong `(write-ulong-to-command data-vector ,key ,(second spec)))
 	      (t (error "Unknow type ~S in specification" (type-of-spec spec))))))
 	(write-to-nxt data-vector)
 	,(when (reply-expected-for-type-code type-code)
@@ -138,6 +141,12 @@ that the space we write in is already zeroed out."
   (setf (aref vector location) (ldb (byte 8 0) value))
   (setf (aref vector (1+ location)) (ldb (byte 8 8) value)))
 
+(defun write-ulong-to-command (vector value location)
+  (setf (aref vector location) (ldb (byte 8 0) value))
+  (setf (aref vector (+ 1 location)) (ldb (byte 8 8) value))
+  (setf (aref vector (+ 2 location)) (ldb (byte 8 16) value))
+  (setf (aref vector (+ 3 location)) (ldb (byte 8 24) value)))
+ 
 (defun read-uword-from-reply (vector location)
   (let ((result 0))
     (setf (ldb (byte 8 0) result) (aref vector location))
@@ -306,7 +315,7 @@ and send it over the wire, eh, air."
 (def-nxt-command start-program #x00 #x00 file-name (string 2 21))
 (def-reply-package #x00)
 
-(def-nxt-command stop-program  #00 #01)
+(def-nxt-command stop-program  #x00 #x01)
 (def-reply-package #x01)
 
 (def-nxt-command play-sound-file #x00 #x02 loop (ubyte 2) file-name (string 3 22))
@@ -323,6 +332,7 @@ and send it over the wire, eh, air."
 		 turn-ratio (ubyte 6) ;; needs to be subyte, so this will fail with negative numebrs.
 		 run-state (ubyte 7)
 		 tacho-limit (ulong 8))
+
 (def-reply-package #x04)		 
 
 (def-nxt-command set-input-mode #x00 #x05
