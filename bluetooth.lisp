@@ -88,11 +88,9 @@ The result is something that looks like
 ;; CREATING THE COMMANDS
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def-nxt-command get-firmware-version #x01 #x88)
-(def-nxt-command get-device-info      #x01 #x9b)
-(def-nxt-command find-first           #x01 #x86 file-name (string 2 21))
-(def-nxt-command find-next            #x01 #x87 handle    (ubyte 2))
-(def-nxt-command nxt-close                #x01 #x84 handle     (ubyte 2))
+
+
+
 
 
 ;; (def-nxt-command get-input-values     #x00 #x07 port       (ubyte 2))
@@ -137,6 +135,10 @@ that the space we write in is already zeroed out."
        :do
        (write-char (code-char char) s))))
 
+(defun read-data-from-reply (vector start amount)
+  "Reads `amount' nr of bytes from the vector at start"
+  (make-array amount :displaced-to vector :displaced-index-offset start))
+
 (defun write-uword-to-command (vector value location)
   (setf (aref vector location) (ldb (byte 8 0) value))
   (setf (aref vector (1+ location)) (ldb (byte 8 8) value)))
@@ -171,7 +173,8 @@ that the space we write in is already zeroed out."
     (error "Default conection is already open, close it first!"))
   ; hope default is the correct, according to the standard a nice implemention
   ; will indeed pick the best element-type for the file.
-  (setf *connection* (open dev-name :direction :io :element-type :default :if-exists :overwrite))
+;  (setf *connection* (open dev-name :direction :io :element-type :default :if-exists :overwrite))
+  (setf *connection* (open dev-name :direction :io :element-type  '(unsigned-byte 8) :if-exists :overwrite))
   (unless *connection*
     (error "Failed to open bluetooth device!")))
 
@@ -250,40 +253,51 @@ and send it over the wire, eh, air."
 	       (string `(read-string-from-reply data ,(second spec) ,(third spec)))
 	       (uword `(read-uword-from-reply data ,(second spec)))
 	       (ulong `(read-ulong-from-reply data ,(second spec)))
+	       (data `(read-data-from-reply data ,(second spec) (read-uword-from-reply data ,(third spec))))
 	       (t (error "Unrecognized type ~S in specification" (type-of-spec spec)))))))))
 
 
 ;; open read command
+(def-nxt-command nxt-open-read #x01 #x80 file-name (string 2 21))
 (def-reply-package #x80 handle (ubyte 3)
 		        file-size (ulong 4))
-;; oen write command
+;; open write command
+(def-nxt-command nxt-open-write #x01 #x81 file-name (string 2 21) file-size (ulong 22))
 (def-reply-package #x81 handle (ubyte 3))
 ;; read command
-;(def-reply-package #x82 handle (byte 3)
-;		        amount-read (uword 4)
-;			data (data 6))
+
+(def-nxt-command nxt-read #x01 #x82 handle (ubyte 2) nr-of-bytes (uword 3))
+(def-reply-package #x82 handle (ubyte 3)
+		        amount-read (uword 4)
+			data (data 6 4))
 ;; write command
 (def-reply-package #x83 handle (ubyte 3)
 		   amount-written-to-flash (uword 4))
 ;; close command
+(def-nxt-command nxt-close                #x01 #x84 handle     (ubyte 2))
 (def-reply-package #x84 handle (ubyte 3))
 ;; delete command
 (def-reply-package #x85 file-name (string 3 22))
+
 ;; find-first
+(def-nxt-command find-first           #x01 #x86 file-name (string 2 21))
 (def-reply-package #x86 handle (ubyte 3)
 		        file-name (string 4 23)
 			file-size (ulong 24))
 ;; find-next
+(def-nxt-command find-next            #x01 #x87 handle    (ubyte 2))
 (def-reply-package #x87 handle (ubyte 3)
 		        file-name (string 4 23)
 			file-size (ulong 24))
 ;; Get firmware version
+(def-nxt-command get-firmware-version #x01 #x88)
 (def-reply-package #x88 protocol-version-minor (ubyte 3)
 		        protocol-version-major (ubyte 4)
                         firmware-version-minor (ubyte 5)
                         firmware-version-major (ubyte 6))
 
 ;; Get device info
+(def-nxt-command get-device-info      #x01 #x9b)
 (def-reply-package #x9b 
     nxt-name (string 3 17)
     bluetooth-signal-strength (ulong 25)
@@ -329,7 +343,7 @@ and send it over the wire, eh, air."
 		 power-set-point (ubyte 3)
 		 mode (ubyte 4)
 		 regulation-mode (ubyte 5)
-		 turn-ratio (ubyte 6) ;; needs to be subyte, so this will fail with negative numebrs.
+		 turn-ratio (ubyte 6) ;; needs to be sbyte, so this will fail with negative numebrs.
 		 run-state (ubyte 7)
 		 tacho-limit (ulong 8))
 
@@ -412,7 +426,6 @@ and send it over the wire, eh, air."
 
     
 
-		 
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defmethod parse-nxt-reply ((code t) (data vector))
