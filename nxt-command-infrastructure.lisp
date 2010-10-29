@@ -10,6 +10,7 @@
 
 (in-package :nxt)
 
+
 ;;;; Part 1
 ;; Infrastructure to build command vectors
 ;;
@@ -26,8 +27,14 @@
   (setf (aref vector location) value))
 
 (defun read-ubyte-from-reply (vector location)
-  "Extract unsgned byte value from the reply vector `vector' at location `location'."
+  "Extract unsigned byte value from the reply vector `vector' at location `location'."
   (aref vector location))
+
+(defun read-named-value-byte-from-reply (vector location flag-values)
+  "Extract unsigned byte from the reply vector `vector' at location `location' and interprets
+the value by looking it up in the flag-values property list `flag-values'"
+  (let ((value (read-ubyte-from-reply vector location)))
+    (or (getf flag-values value) value)))
 
 (defun write-string-to-command (vector value start end)
   "Write the string `value' in the result at the byte range
@@ -86,15 +93,21 @@ Returns one of: 'ubyte, 'uword, 'ulong, 'string."
   (first spec))
 
 (defun last-byte-of-spec (spec)
-  "Returns the last byte in the command vector occupied by spec."
+  "Returns the last byte in the command vector occupied by spec.
+The exception is if a 'data' spec is present.  The data is variable 
+length and is not accounted for.  However, if the size of the data
+is stored in the frame, the ubyte where the length of the data is stored IS 
+taken into account."
   (case (type-of-spec spec)
     (uword (+ 1 (second spec)))
     (ulong (+ 3 (second spec)))
+    (data (or (second spec) 0))
     (t (car (last spec)))))
     
 (defun command-length (command-spec)
   "Returns the length of the command buffer needed to hold
-all the variables specified in `command-spec'."
+all the variables specified in `command-spec', except for
+the variable part of the 'data' parameter type."
   (max 2
    (1+ (loop :for (name spec) :on command-spec :by #'cddr
      :maximize (last-byte-of-spec spec)))))
@@ -143,6 +156,12 @@ The result is something that looks like
 	      (string `(write-string-to-command data-vector ,key ,(second spec) ,(third spec)))
 	      (uword `(write-uword-to-command data-vector ,key ,(second spec)))
 	      (ulong `(write-ulong-to-command data-vector ,key ,(second spec)))
+	      (data `(progn
+		       (setf data-vector (concatenate 'vector data-vector ,key))
+		       ,(when (second spec) 
+			      `(write-ubyte-to-command data-vector 
+						       (length ,key) 
+						       ,(second spec)))))
 	      (t (error "Unknow type ~S in specification" (type-of-spec spec))))))
 	(write-to-nxt data-vector)
 	,(when (reply-expected-for-type-code type-code)
@@ -151,7 +170,50 @@ The result is something that looks like
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
   "See for the documentation the function `create-nxt-command-form'."
+;  (export name)
   (apply #'create-nxt-command-form name name-code type-code rest))
+
+
+(defparameter *status-values* '(0 :success 
+				;; Direct commands
+				#x20 :pending-communication-transaction-in-progress
+				#x40 :speficied-mailbox-queue-is-empty
+				#xbd :request-failed
+				#xbe :unknown-command-opcode
+				#xbf :insane-packet
+				#xc0 :dta-contains-out-of-range-values
+				#xdd :communication-bus-error
+				#xde :no-free-memory-in-communication-buffer
+				#xdf :specified-channel/connection-is-not-valid
+				#xe0 :specified-channel/connection-not-configured-or-busy
+				#xec :no-active-program
+				#xed :illegal-size-specified
+				#xee :illegal-mailbox-queue-id-specified
+				#xef :attempted-to-access-invalid-field-of-structure
+				#xf0 :bad-input-or-output-specified
+				#xfb :insufficient-memory-available
+				#xff :bad-arguments
+
+				;; Communication protocol
+				#x81 :no-more-handles
+				#x82 :no-space
+				#x83 :no-more-files
+				#x84 :end-of-file-expected
+				#x85 :end-of-file
+				#x86 :not-a-linear-file
+				#x87 :file-not-found
+				#x88 :handle-all-ready-closed
+				#x89 :no-linear-space
+				#x8a :undefined-error
+				#x8b :file-busy
+				#x8c :no-write-buffers
+				#x8d :append-not-possible
+				#x8e :file-is-full
+				#x8f :file-exists
+				#x90 :module-not-found
+				#x91 :out-of-boundary
+				#x92 :illegal-file-name
+				#x93 :illegal-handle))
 
 (defmacro def-reply-package (code &rest rest)
   "Creates a `parse-nxt-reply' specialized `(eql code)' to parse a nxt reply package.
@@ -162,9 +224,10 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
    (list (list 'code (list 'eql code))
 	 (list 'data 'vector))
    (cons 'list
-    (loop :for  (key spec) :on (append (list 'status '(ubyte 2))  rest) :by #'cddr :collect
+    (loop :for  (key spec) :on (append (list 'status '(named-byte 2 *status-values*))  rest) :by #'cddr :collect
        (list 'cons `(quote ,key)
 	     (case (type-of-spec spec)
+	       (named-byte `(read-named-value-byte-from-reply data ,(second spec) ,(third spec)))
 	       (ubyte `(read-ubyte-from-reply data ,(second spec)))
 	       (string `(read-string-from-reply data ,(second spec) ,(third spec)))
 	       (uword `(read-uword-from-reply data ,(second spec)))
