@@ -4,6 +4,7 @@
   (:use #:cl)
   (:export #:open-connection
 	   #:close-connection
+	   #:*nxt-bluetooth-device*
 	   ;; nxt commands
 	   #:nxt-open-read
 	   #:nxt-open-write

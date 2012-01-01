@@ -6,11 +6,15 @@
 (defvar *connection* nil)
 
 (defun open-connection (&optional (dev-name *nxt-bluetooth-device*))
+  "Opens a bluetooth serial connection on device given by `dev-name'.
+For the rest of the code to work, the device opened should speak the NXT 
+bluetooth protocol.  This is normally achieved by tying the `dev-name' device
+to a NXT brick.  
+
+After the connectionis opened, it is stored in the special variable `*connection*'
+which is used for all the commands that actually talk to the NXT brick."
   (when *connection*
     (error "Default conection is already open, close it first!"))
-  ; hope default is the correct, according to the standard a nice implemention
-  ; will indeed pick the best element-type for the file.
-;  (setf *connection* (open dev-name :direction :io :element-type :default :if-exists :overwrite))
   (setf *connection* (open dev-name :direction :io :element-type  '(unsigned-byte 8) :if-exists :overwrite))
   (unless *connection*
     (error "Failed to open bluetooth device!")))

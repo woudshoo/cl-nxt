@@ -1,0 +1,345 @@
+\input texinfo
+@c %**start of header
+@setfilename nxt
+@settitle NXT Bluetooth Communication From Lisp
+@c %**end of header
+
+@copying
+Need to figure out the license
+
+Copyright @copyright{} 2010 Willem Rein Oudshoorn
+@end copying
+
+@titlepage
+@title NXT Bluetooth
+@subtitle Communications From Lisp
+@author Willem Rein Oudshoorn
+
+@page
+@vskip 0pt plus 1filll
+@insertcopying
+@end titlepage
+
+@contents
+
+@ifnottex
+@node Top
+@top Short Sample (what is this?)
+
+@insertcopying
+@end ifnottex
+
+@menu
+
+* Introduction:: Explains everything
+* Making a Connection:: Setting up the Bluetooth communication
+* NXT Commands:: The lisp wrapper of the NXT commands
+* Higher Level Functions:: 
+* NXT Error Codes:: List of error the NXT can return
+* Index:: Where is it?
+
+@end menu
+
+
+@node Introduction
+@chapter Introduction
+
+This small Common Lisp package implements almost all NXT commands and direct
+NXT commands as described in the LEGO NXT documentation.  
+
+
+
+@node Making a Connection
+@chapter Making a Connection
+
+The communication with the NXT is with bluetooth, but the actual
+bluetooth communication should be abstracted away behind a serial device
+which can be opened as a file by the common lisp system.  
+
+@defvr Variable *nxt-bluetooth-device* 
+       
+Contains the default device name used by the
+@code{open-connection} command.  This variable, or the argumet to @code{open-connect}
+should be a serial device which connects to the NXT brick.  
+Because this library assumes that the data send to the device is formatted
+for the NXT bluetooth protocol, it only works if the device talks to
+the NXT over bluetooth.
+
+@end defvr
+
+@defvr {Private Variable} *connection*
+
+Contains the stream that connects to the NXT brick.  Writing and reading
+to this stream will send raw bytes to the NXT.  This variable is used by all the 
+functions which talk to the NXT and is modified by @code{open-connection} and
+@code{close-connection}.  There is normally no need to access or use this
+variable directly.
+
+@end defvr
+
+@deffn Function open-connection &optional (dev-name *nxt-bluetooth-device*)
+
+@end deffn
+
+@node NXT Commands
+@chapter NXT Commands
+
+@deffn  Function nxt-open-read &key file-name
+@deffnx Function nxt-open-write &key file-name file-size
+@deffnx Function nxt-read &key handle nr-of-bytes
+@deffnx Function nxt-write &key handle data
+@deffnx Function nxt-close &key handle
+@deffnx Function nxt-delete &key file-name 
+@deffnx Function nxt-find-first &key file-name
+@deffnx Function nxt-find-next &key handle
+@deffnx Function nxt-get-firmware-version
+@deffnx Function nxt-get-device-info
+@deffnx Function nxt-request-first-module &key resource-name
+@deffnx Function nxt-request-next-module &key handle
+@deffnx Function nxt-close-module-handle &key handle
+@deffnx Function nxt-start-program &key file-name
+@deffnx Function nxt-stop-program
+@deffnx Function nxt-play-sound-file &key loop file-name
+@deffnx Function nxt-play-tone &key frequency duration
+@deffnx Function nxt-set-output-state &key output-port power-set-point mode regulation-mode turn-ratio run-state tacho-limit
+@deffnx Function nxt-set-input-mode &key input-port sensor-type sensor-mode
+@deffnx Function nxt-get-output-state &key output-port
+@deffnx Function nxt-get-input-values &key input-port
+@deffnx Function nxt-reset-input-scaled-value &key input-port
+@deffnx Function nxt-message-write &key inbox message-data
+@deffnx Function nxt-reset-motor-position &key output-port relative
+@deffnx Function nxt-get-battery-level
+@deffnx Function nxt-stop-sound-playback
+@deffnx Function nxt-keep-alive
+@deffnx Function nxt-ls-get-status &key port
+@deffnx Function nxt-ls-write &key port rx-data-length tx-data
+@deffnx Function nxt-ls-read &key port
+@deffnx Function nxt-get-current-program-name
+@deffnx Function nxt-message-read &key remote-inbox local-inbox remove
+
+These commands call the corresponding command on the brick.  The
+keyword arguments are of the following types
+
+@table @code
+@item file-name
+String of at most 19 characters.
+@item file-size
+An integer of at most 2^32.
+@item handle
+An integer of at most 2^16
+@item nr-of-bytes
+An integer of at most 2^16
+@item data
+A vector of octets.
+@item resource-name
+A string of at most 19 characters.
+@item loop 
+A byte value, interpreted as a boolean.
+@item frequency
+An integer of 16 bit wide.
+@item duration
+An integer of 16 bit wide.
+@end table
+@end deffn
+
+
+The following commands are not implemented yet
+
+@deffn Function nxt-open-write-linear &key file-name file-size
+@deffnx Function nxt-open-read-linear &key file-name
+@deffnx Function nxt-open-write-data &key file-name file-size
+@deffnx Function nxt-open-append-data &key file-name
+@deffnx Function nxt-boot &key password
+@deffnx Function nxt-set-brick-name &key name
+@deffnx Function nxt-delete-user-flash
+@deffnx Function nxt-poll-command-length &key buffer-number
+@deffnx Function nxt-poll &key buffer-number
+@deffnx Function nxt-bluetooth-factory-reset
+
+These functions are not implemented yet for various reasons.  For example @code{bluetooth-factory-reset} can not
+be sent over bluetooth according to the documentation and @code{delete-user-flash} sound just to scary.  
+But for most of them,  just haven't had the need.
+
+@end deffn
+
+@node Higher Level Functions
+@chapter Higer Level Functions
+
+
+@deffn Function find-all-files
+       
+Returns a list of files, where each file is represented
+as an alist containing the following keys
+       
+@table @code
+@item status 
+Should always be @code{:succes}.  Otherwise something strange 
+is going on.   For a list of return states @xref{NXT Error Codes}.
+@item handle
+Is an integer which is irrelevant. It is the handle used
+to retrieve the list of files
+@item file-name
+The name of the file represented by this alist.
+@item file-size
+The size of the file represented by this alist.
+@end table
+@end deffn       
+
+
+@deffn Function find-all-modules
+
+Returns a list of all modules installed on the NXT.  Each
+module is represented by an alist with the following keys
+
+@table @code
+@item status
+Should always be @code{:succes}.  If not, @xref{NXT Error Codes}.
+@item handle
+Is irrelevant.  It is the handle used to query the NXT for modules.
+@item moduel-name
+The name of the module
+@item module-id
+An integer which acts as an module id.  This is used in ???
+@item module-size
+ The size of the module.  I assume in bytes, and I don't know if it is
+relevant, except for knowing how much space it takes up in FLASH
+memory.
+@item io-map-size
+The size of the IO-map.  
+@end table
+@end deffn
+
+@deffn Function get-file file-name
+       
+This function retrieves the content of a file on the NXT, identified
+by file-name.  If this call is successfull 
+it returns the content of the file as a vector of octets/bytes.
+If the call fails, it returns an alist of the result of 
+the offending call.  The alist contains at least the following keys
+
+@table @code
+@item status
+Contains the error code for the offending call.  Error codes are
+listed in @xref{NXT Error Codes}.
+@item handle
+The handle which is used to retrieve the data.
+@end table             
+@end deffn       
+
+@deffn Function put-file file-name data
+
+A function which creates a file on the NXT with name @code{file-name}
+and content @code{data}.  The data argument is either a vector or a string.
+
+The return value is either the result of the failed open call or the result
+of the close handle call.   The returned assoc list contains at least
+the key @code{status} with one of the error code listed in @xref{NXT Error Codes}.
+@end deffn
+
+
+@deffn Function copy-file-from-nxt file-name-nxt file-name
+
+Copies a files from the NXT to the local file system.  The file on the NXT is @code{file-name-nxt}
+and the local file name @code{file-name}.   
+
+No error checking is done, if e.g. the file does not exist on the NXT, the function
+might generate all kinds of errors.
+@end deffn
+
+@deffn Function copy-file-to-nxt file-name file-name-nxt
+
+Copies a file from the local file system to the NXT.  The local file name is called @code{file-name}
+and the file on the NXT is called @code{file-name-nxt}.
+
+No error checking is done.  If for example the file @code{file-name} can not be opened for reading,
+it probably raises a condition, but no guarantees are given.
+@end deffn
+
+@node NXT Error Codes
+@chapter NXT Error Codes
+
+@multitable @columnfractions 0.15 0.85
+@headitem Value @tab Symbol
+@item #x00 
+@tab @code {:succes}
+@item #x20
+@tab @code {:pending-communication-transaction-in-progress}
+@item #x40
+@tab @code {:speficied-mailbox-queue-is-empty}
+@item #x81
+@tab @code {:no-more-handles}
+@item #x82
+@tab @code {:no-space}
+@item #x83
+@tab @code {:no-more-files}
+@item #x84
+@tab @code {:end-of-file-expected}
+@item #x85
+@tab @code {:end-of-file}
+@item #x86
+@tab @code {:not-a-linear-file}
+@item #x87
+@tab @code {:file-not-found}
+@item #x88
+@tab @code {:handle-all-ready-closed}
+@item #x89
+@tab @code {:no-linear-space}
+@item #x8a
+@tab @code {:undefined-error}
+@item #x8b
+@tab @code {:file-busy}
+@item #x8c
+@tab @code {:no-write-buffers}
+@item #x8d
+@tab @code {:append-not-possible}
+@item #x8e
+@tab @code {:file-is-full}
+@item #x8f
+@tab @code {:file-exists}
+@item #x90
+@tab @code {:module-not-found}
+@item #x91
+@tab @code {:out-of-boundary}
+@item #x92
+@tab @code {:illegal-file-name}
+@item #x93
+@tab @code {:illegal-handle}
+@item #xbd
+@tab @code {:request-failed}
+@item #xbe
+@tab @code {:unknown-command-opcode}
+@item #xbf
+@tab @code {:insane-packet}
+@item #xc0
+@tab @code {:dta-contains-out-of-range-values}
+@item #xdd
+@tab @code {:communication-bus-error}
+@item #xde
+@tab @code {:no-free-memory-in-communication-buffer}
+@item #xdf
+@tab @code {:specified-channel/connection-is-not-valid}
+@item #xe0
+@tab @code {:specified-channel/connection-not-configured-or-busy}
+@item #xec
+@tab @code {:no-active-program}
+@item #xed
+@tab @code {:illegal-size-specified}
+@item #xee
+@tab @code {:illegal-mailbox-queue-id-specified}
+@item #xef
+@tab @code {:attempted-to-access-invalid-field-of-structure}
+@item #xf0
+@tab @code {:bad-input-or-output-specified}
+@item #xfb
+@tab @code {:insufficient-memory-available}
+@item #xff
+@tab @code {:bad-arguments}
+@end multitable
+
+@node Index
+@unnumbered Index
+
+@printindex cp
+
+@bye
+
