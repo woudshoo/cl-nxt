@@ -1,3 +1,10 @@
+;;; Copyright (c) 2010-2011 by Willem Rein Oudshoorn
+;;;
+;;; Licensed under the BSD License, see accompanied LICENSE file
+;;;
+
+(in-package :nxt)
+
 ;;;;;
 ;;;;; nxt-command-infrastructure
 ;;
@@ -7,8 +14,6 @@
 ;; 1 - infrastructure to build command vectors
 ;; 2 - macros to define commands + supporting functions to create the macro
 ;;
-
-(in-package :nxt)
 
 
 ;;;; Part 1

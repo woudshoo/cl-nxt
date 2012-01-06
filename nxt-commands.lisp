@@ -1,3 +1,7 @@
+;;; Copyright (c) 2010-2011 by Willem Rein Oudshoorn
+;;;
+;;; Licensed under the BSD License, see accompanied LICENSE file
+;;;
 (in-package :nxt)
 
 
