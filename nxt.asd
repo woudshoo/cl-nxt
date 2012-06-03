@@ -10,12 +10,13 @@
 (in-package :nxt.system)
 
 (defsystem :nxt
+  :depends-on ("cffi" "static-vectors")
   :version "0.0.1"
   :serial t
   :components ((:file "package")
+	       (:file "nxt-classes")
 	       (:file "nxt-bluetooth")
+	       (:file "nxt-usb")
 	       (:file "nxt-command-infrastructure")
 	       (:file "nxt-commands")
 	       (:file "nxt-utilities")))
-
-  

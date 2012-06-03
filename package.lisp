@@ -6,9 +6,20 @@
 
 (defpackage #:nxt
   (:use #:cl)
-  (:export #:open-connection
+  (:export #:nxt			;classes
+	   #:usb-nxt
+	   #:bluetooth-nxt
+
+	   #:*nxt*			;default brick handling
+	   #:open-connection
 	   #:close-connection
-	   #:*nxt-bluetooth-device*
+
+	   #:find-an-nxt		;low-level opening and closing
+	   #:open-bluetooth-nxt
+	   #:find-usb-nxt
+	   #:close-nxt
+	   #:*default-bluetooth-device*
+
 	   ;; nxt commands
 	   #:nxt-open-read
 	   #:nxt-open-write

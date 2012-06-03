@@ -144,8 +144,8 @@ The result is something that looks like
           (write-ubyte-to-command data-vector #x01)
           (write-ubyte-to-command data-vector #x86)
           (write-string-to-command data-vector file-name 2 21)
-          (write-to-nxt data-vector)
-          (read-nxt-reply)))
+          (write-to-nxt *nxt* data-vector)
+          (read-nxt-reply *nxt*)))
 "
   (let ((command-length (command-length args)))
     (list
@@ -168,9 +168,9 @@ The result is something that looks like
 						       (length ,key) 
 						       ,(second spec)))))
 	      (t (error "Unknow type ~S in specification" (type-of-spec spec))))))
-	(write-to-nxt data-vector)
+	(write-to-nxt *nxt* data-vector)
 	,(when (reply-expected-for-type-code type-code)
-	       '(let ((reply (read-nxt-reply)))
+	       '(let ((reply (read-from-nxt *nxt*)))
 		 (parse-nxt-reply (aref reply 1) reply)))))))
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
