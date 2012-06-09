@@ -124,12 +124,12 @@ the variable part of the 'data' parameter type."
 ;; TRANSLATING THE FORMS INTO COMMANDS
 (defun create-nxt-command-form (name type-code command-code &rest args)
   "Creates the command function `name' which is a nxt command with the
-two command identification bytes `type-code' and `command-code'.  
+two command identification bytes `type-code' and `command-code'.
 The `args' contains key value pairs that should be taken by the function together
 with a type specifier.  Type specifiers are lists of the form (`type' `position' rest).
-The type is one of 
+The type is one of
 
-  ubyte   - unsigned byte 
+  ubyte   - unsigned byte
   uword   - unsigned word (2 bytes)
   ulong   - unsigned long (4 bytes)
   string  - has additional parameter, `final-position'.
@@ -148,30 +148,29 @@ The result is something that looks like
           (read-nxt-reply *nxt*)))
 "
   (let ((command-length (command-length args)))
-    (list
-     'defun name (cons '&key (loop :for key :in args :by #'cddr :collect key ))
-     `(let ((data-vector (make-array ,command-length 
-				     :element-type 'unsigned-byte
-				     :initial-element 0)))
-	(write-ubyte-to-command data-vector ,type-code 0)
-	(write-ubyte-to-command data-vector ,command-code 1)
-	,(cons 'progn (loop :for (key spec) :on args :by #'cddr :collect
-	    (case (type-of-spec spec)
-	      (ubyte `(write-ubyte-to-command data-vector ,key ,(second spec)))
-	      (string `(write-string-to-command data-vector ,key ,(second spec) ,(third spec)))
-	      (uword `(write-uword-to-command data-vector ,key ,(second spec)))
-	      (ulong `(write-ulong-to-command data-vector ,key ,(second spec)))
-	      (data `(progn
-		       (setf data-vector (concatenate 'vector data-vector ,key))
-		       ,(when (second spec) 
-			      `(write-ubyte-to-command data-vector 
-						       (length ,key) 
-						       ,(second spec)))))
-	      (t (error "Unknow type ~S in specification" (type-of-spec spec))))))
-	(write-to-nxt *nxt* data-vector)
-	,(when (reply-expected-for-type-code type-code)
-	       '(let ((reply (read-from-nxt *nxt*)))
-		 (parse-nxt-reply (aref reply 1) reply)))))))
+    `(defun ,name (&key ,@(loop :for key :in args :by #'cddr :collect key))
+       (let ((data-vector (make-array ,command-length
+				      :element-type 'unsigned-byte
+				      :initial-element 0)))
+	 (write-ubyte-to-command data-vector ,type-code 0)
+	 (write-ubyte-to-command data-vector ,command-code 1)
+	 ,@(loop :for (key spec) :on args :by #'cddr :collect
+	      (case (type-of-spec spec)
+		(ubyte `(write-ubyte-to-command data-vector ,key ,(second spec)))
+		(string `(write-string-to-command data-vector ,key ,(second spec) ,(third spec)))
+		(uword `(write-uword-to-command data-vector ,key ,(second spec)))
+		(ulong `(write-ulong-to-command data-vector ,key ,(second spec)))
+		(data `(progn
+			 (setf data-vector (concatenate 'vector data-vector ,key))
+			 ,(when (second spec)
+				`(write-ubyte-to-command data-vector
+							 (length ,key)
+							 ,(second spec)))))
+		(t (error "Unknow type ~S in specification" (type-of-spec spec)))))
+	 (write-to-nxt *nxt* data-vector)
+	 ,@(when (reply-expected-for-type-code type-code)
+             `((let ((reply (read-from-nxt *nxt*)))
+		 (parse-nxt-reply (aref reply 1) reply))))))))
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
   "See for the documentation the function `create-nxt-command-form'."
