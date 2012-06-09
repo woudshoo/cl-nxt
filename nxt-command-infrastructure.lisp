@@ -35,36 +35,6 @@
   "Extract unsigned byte value from the reply vector `vector' at location `location'."
   (aref vector location))
 
-(defun read-named-value-byte-from-reply (vector location flag-values)
-  "Extract unsigned byte from the reply vector `vector' at location `location' and interprets
-the value by looking it up in the flag-values property list `flag-values'"
-  (let ((value (read-ubyte-from-reply vector location)))
-    (or (getf flag-values value) value)))
-
-(defun write-string-to-command (vector value start end)
-  "Write the string `value' in the result at the byte range
-`start' .. `end'.   We assume the range is closed, that is, 
-both start and end are part of the string space in the vector.
-However we also assume that the string is \0 terminated and
-that the space we write in is already zeroed out."
-  (loop :for char :across value 
-     :for index :from start :below end
-     :do
-     (setf (aref vector index) (char-code char))))
-
-(defun read-string-from-reply (vector start end)
-  "Reads the zero terminates tring from vector."
-  (with-output-to-string (s)
-    (loop :for index :from start :below end
-       :for char = (aref vector index)
-       :until (eql char 0)
-       :do
-       (write-char (code-char char) s))))
-
-(defun read-data-from-reply (vector start amount)
-  "Reads `amount' nr of bytes from the vector at location `start'."
-  (make-array amount :displaced-to vector :displaced-index-offset start))
-
 (defun write-uword-to-command (vector value location)
   (setf (aref vector location) (ldb (byte 8 0) value))
   (setf (aref vector (1+ location)) (ldb (byte 8 8) value)))
@@ -92,37 +62,229 @@ that the space we write in is already zeroed out."
 
 ;;;; Part 2
 ;; Macros to defin nxt-commands and their supporting functions.
-(defun type-of-spec (spec)
-  "Returns the type of a single variable spec for the nxt command description.
-Returns one of: 'ubyte, 'uword, 'ulong, 'string."
-  (first spec))
-
-(defun last-byte-of-spec (spec)
-  "Returns the last byte in the command vector occupied by spec.
-The exception is if a 'data' spec is present.  The data is variable 
-length and is not accounted for.  However, if the size of the data
-is stored in the frame, the ubyte where the length of the data is stored IS 
-taken into account."
-  (case (type-of-spec spec)
-    (uword (+ 1 (second spec)))
-    (ulong (+ 3 (second spec)))
-    (data (or (second spec) 0))
-    (t (car (last spec)))))
-    
-(defun command-length (command-spec)
-  "Returns the length of the command buffer needed to hold
-all the variables specified in `command-spec', except for
-the variable part of the 'data' parameter type."
-  (max 2
-   (1+ (loop :for (name spec) :on command-spec :by #'cddr
-     :maximize (last-byte-of-spec spec)))))
 
 (defun reply-expected-for-type-code (code)
   "t if the nxt command with type code `code' will generate a reply."
     (eql 0 (ldb (byte 1 7) code)))
 
+
+;;;;
+;;;; FRAME-INFO: Description of the two frames (request and reply) which
+;;;; together define a command. 
+;;;;
+
+(defclass frame-pair ()
+  ((name         :initarg :name         :accessor fp-name)
+   (type-code    :initarg :type-code    :accessor fp-type-code)
+   (command-code :initarg :command-code :accessor fp-command-code)
+   (request      :initarg :request      :accessor fp-request)
+   (reply        :initarg :reply        :accessor fp-reply)))
+
+(defun find-frame-pair (name)
+  (get name 'frame-pair))
+
+(defvar *code-to-info-table* (make-array 256 :initial-element nil))
+
+(defun (setf find-frame-pair) (newval name)
+  (setf (get name 'frame-pair) newval)
+  (setf (elt *code-to-info-table* (fp-command-code newval)) newval))
+
+(defun clear-all ()
+  ;; clear out everything manually, just in case the two maps are out of sync
+  (do-symbols (sym (find-package :nxt))
+    (when (find-frame-pair sym)
+      (setf (get sym 'frame-pair) nil)))
+  (fill *code-to-info-table* nil))
+
+(defun ensure-frame-pair (name type-code command-code)
+  (or (find-frame-pair name)
+      (setf (find-frame-pair name)
+	    (make-instance 'frame-pair
+			   :name name
+			   :type-code type-code
+			   :command-code command-code))))
+
+(defun lookup-command-code (command-code)
+  (elt *code-to-info-table* command-code))
+
+
+;;;;
+;;;; FRAME-INFO: Description of a single frame's (either direction)
+;;;; parameters.
+;;;;
+
+(defclass frame-info ()
+  ((n-static-bytes :initform nil        :accessor %n-static-bytes)
+   (parameters     :initarg :parameters :accessor fi-parameters)))
+
+(defun parse-frame-info (specs)
+  (let ((parameters (parse-parameter-specs specs)))
+    (make-instance 'frame-info :parameters parameters)))
+
+;;; Traditionally, the file nxt-commands.lisp listed byte offsets for all
+;;; parameters manually.  We can actually compute those offsets automatically
+;;; based on the fields and their sizes.  But since the LEGO spec lists
+;;; all offsets, there is not much point to doing it automatically.
+;;; Let's explicitly have an assertion though, to ensure that the sizes
+;;; match up with the specified offsets though:
+;;;
+(defun check-offsets (parameters)
+  (when parameters
+    (assert (eql 2 (pi-offset (car parameters)))))
+  (loop for (a b) on parameters do
+       (when b
+	 (unless (eql (+ (pi-offset a) (pi-nbytes a))
+		      (pi-offset b))
+	   (error "parameter positions invalid: ~A/~A" a b)))))
+
+(defun link-size-parameters! (params)
+  (dolist (param params)
+    (when (typep param 'data-parameter/specified-length)
+      (let ((size (pi-size-parameter param)))
+	(when (symbolp size)
+	  (setf (pi-size-parameter param)
+		(or (find size params :key #'pi-name)
+		    (error "referenced size parameter not found: ~A"
+			   size))))))))
+
+(defmethod initialize-instance :after ((instance frame-info) &key)
+  (link-size-parameters! (fi-parameters instance))
+  (check-offsets (fi-parameters instance)))
+
+;;;;
+;;;; PARAMETER-INFO
+;;;; Describes an individual parameter: It's name, type, offset, etc.
+;;;;
+
+(defclass parameter-info ()
+  ((name   :initarg :name   :accessor pi-name)
+   (offset :initarg :offset :accessor pi-offset)))
+
+(defmethod print-object ((instance parameter-info) stream)
+  (print-unreadable-object (instance stream :type t)
+    (format stream "named ~A at offset ~A"
+	    (pi-name instance)
+	    (pi-offset instance))))
+
+(defclass nbytes-mixin ()
+  ((nbytes :initarg :nbytes :accessor pi-nbytes)))
+
+(defclass string-parameter (nbytes-mixin parameter-info)
+  ())
+
+(defclass status-parameter (parameter-info) ())
+
+(defclass numeric-parameter (parameter-info) ())
+(defclass ubyte-parameter (numeric-parameter) ())
+(defclass uword-parameter (numeric-parameter) ())
+(defclass ulong-parameter (numeric-parameter) ())
+
+(defclass data-parameter (parameter-info) ())
+(defclass variable-length-data-parameter (data-parameter) ())
+
+(deftype fixed-length-parameter ()
+  `(and parameter-info (not variable-length-data-parameter)))
+
+;;; We distinguish between subtly different kinds of length encoding for
+;;; for byte data found in the protocol:
+
+(defclass data-parameter/fixed-length (nbytes-mixin data-parameter)
+  ()
+  (:documentation
+   "A data parameter which is specified as fixed-length in the protocol.
+    This kind of parameter does not have a size field on the wire."))
+
+(defclass data-parameter/implicit-length (variable-length-data-parameter)
+  ()
+  (:documentation
+   "A data parameter which is variable-length, but does not have a size field
+    on the wire.  This type of parameter can occur only at the end of a
+    frame."))
+
+(defclass data-parameter/specified-length (variable-length-data-parameter)
+  ((size-parameter :initarg :size-parameter :accessor pi-size-parameter)
+   (adjust-size    :initarg :adjust-size    :accessor pi-adjust-size))
+  (:documentation
+   "A data parameter which is variable-length, but and stores its size
+    (plus the value of adjust-size) in a second parameter, the size-parameter,
+    which must precede the data. "))
+
+(defun parse-parameter-specs (specs)
+  (loop :for (name spec) :on specs :by #'cddr
+        :collect (parse-parameter-spec name spec)))
+
+(defun parse-parameter-spec (name spec)
+  (destructuring-bind (type offset &rest keys) spec
+    (multiple-value-bind (class initargs)
+	(case type
+	  (string
+	   (destructuring-bind (&key size) keys
+	     (values 'string-parameter (list :nbytes size))))
+	  (data
+	   (destructuring-bind (&key size adjust-size) keys
+	     (etypecase size
+	       ((eql :implicit)
+		(assert (null adjust-size))
+		'data-parameter/implicit-length)
+	       (integer
+		(assert (null adjust-size))
+		(values 'data-parameter/fixed-length
+			(list :nbytes size)))
+	       (symbol
+		(values 'data-parameter/specified-length
+			(list :size-parameter size
+			      :adjust-size (or adjust-size 0)))))))
+	  (t
+	   (when keys
+	     (error "keys specified, but not expected for parameter: ~A" spec))
+	   (case type
+	     (status (assert (eql offset 2)) 'status-parameter)
+	     (ubyte 'ubyte-parameter)
+	     (uword 'uword-parameter)
+	     (ulong 'ulong-parameter)
+	     (t (error "Unknown type ~S in specification" spec)))))
+      (apply #'make-instance
+	     class
+	     :name name
+	     :offset offset
+	     initargs))))
+
+(defun fi-nbytes (fi arguments)
+  (+ (n-static-bytes fi)
+     (loop for arg in arguments
+	   for param in (fi-parameters fi)
+	   when (typep param 'variable-length-data-parameter)
+	   summing (length arg))))
+
+(defun n-static-bytes (fi)
+  "Cached length of the frame, excluding variable-length DATA, but including
+   fixed-length DATA (and, of course, also including the length parameter
+   which DATA refers to, if any)."
+  (or (%n-static-bytes fi)
+      (setf (%n-static-bytes fi)
+	    (max 2 (reduce #'max
+			   (fi-parameters fi)
+			   :key (lambda (p)
+				  (etypecase p
+				    (fixed-length-parameter (pi-end p))
+				    (variable-length-data-parameter -1)))
+			   :initial-value 0)))))
+
+;;;;
+;;;; command definition macros 
+;;;;
+
 ;; TRANSLATING THE FORMS INTO COMMANDS
 (defun create-nxt-command-form (name type-code command-code &rest args)
+  (let ((argnames (loop :for key :in args :by #'cddr :collect key)))
+    `(progn
+       (setf (fp-request (ensure-frame-pair ',name ',type-code ',command-code))
+	     (parse-frame-info ',args))
+       (defun ,name (&key ,@argnames)
+	 (let ((fp (load-time-value (find-frame-pair ',name))))
+	   (perform-command fp (list ,@argnames)))))))
+
+(defmacro def-nxt-command (name name-code type-code &rest rest)
   "Creates the command function `name' which is a nxt command with the
 two command identification bytes `type-code' and `command-code'.
 The `args' contains key value pairs that should be taken by the function together
@@ -132,51 +294,25 @@ The type is one of
   ubyte   - unsigned byte
   uword   - unsigned word (2 bytes)
   ulong   - unsigned long (4 bytes)
-  string  - has additional parameter, `final-position'.
-
-The result is something that looks like
-
-  (create-nxt-command 'find-first           #x01 #x86 'file-name '(string 2 21))
-
-==>
-  (defun find-first (&key file-name)
-      (let ((data-vector (make-array 22 :element-type 'unsigned-byte :initial-element 0)))
-          (write-ubyte-to-command data-vector #x01)
-          (write-ubyte-to-command data-vector #x86)
-          (write-string-to-command data-vector file-name 2 21)
-          (write-to-nxt *nxt* data-vector)
-          (read-nxt-reply *nxt*)))
-"
-  (let ((command-length (command-length args)))
-    `(defun ,name (&key ,@(loop :for key :in args :by #'cddr :collect key))
-       (let ((data-vector (make-array ,command-length
-				      :element-type 'unsigned-byte
-				      :initial-element 0)))
-	 (write-ubyte-to-command data-vector ,type-code 0)
-	 (write-ubyte-to-command data-vector ,command-code 1)
-	 ,@(loop :for (key spec) :on args :by #'cddr :collect
-	      (case (type-of-spec spec)
-		(ubyte `(write-ubyte-to-command data-vector ,key ,(second spec)))
-		(string `(write-string-to-command data-vector ,key ,(second spec) ,(third spec)))
-		(uword `(write-uword-to-command data-vector ,key ,(second spec)))
-		(ulong `(write-ulong-to-command data-vector ,key ,(second spec)))
-		(data `(progn
-			 (setf data-vector (concatenate 'vector data-vector ,key))
-			 ,(when (second spec)
-				`(write-ubyte-to-command data-vector
-							 (length ,key)
-							 ,(second spec)))))
-		(t (error "Unknow type ~S in specification" (type-of-spec spec)))))
-	 (write-to-nxt *nxt* data-vector)
-	 ,@(when (reply-expected-for-type-code type-code)
-             `((let ((reply (read-from-nxt *nxt*)))
-		 (parse-nxt-reply (aref reply 1) reply))))))))
-
-(defmacro def-nxt-command (name name-code type-code &rest rest)
-  "See for the documentation the function `create-nxt-command-form'."
+  string  - has additional parameter, `final-position'."
+  ;; Note: The EXPORT was commented out when I first came across this code.
+  ;; We could actually EXPORT these symbols programmatically, but it would
+  ;; have to be done at FASL load time, not macro ocpmilation time:
 ;  (export name)
   (apply #'create-nxt-command-form name name-code type-code rest))
 
+(defmacro def-reply-package (code &rest rest)
+  "Creates a `parse-nxt-reply' specialized `(eql code)' to parse a nxt reply package.
+The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)' 
+..."
+  `(setf (fp-reply (or (lookup-command-code ',code)
+		       (error "reply defined before its command: #x~2,'0X" ',code)))
+	 (parse-frame-info '(status (status 2) ,@rest))))
+
+
+;;;;
+;;;; Status table
+;;;;
 
 (defparameter *status-values* '(0 :success 
 				;; Direct commands
@@ -219,27 +355,168 @@ The result is something that looks like
 				#x92 :illegal-file-name
 				#x93 :illegal-handle))
 
-(defmacro def-reply-package (code &rest rest)
-  "Creates a `parse-nxt-reply' specialized `(eql code)' to parse a nxt reply package.
-The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)' 
-..."
-  (list
-   'defmethod 'parse-nxt-reply 
-   (list (list 'code (list 'eql code))
-	 (list 'data 'vector))
-   (cons 'list
-    (loop :for  (key spec) :on (append (list 'status '(named-byte 2 *status-values*))  rest) :by #'cddr :collect
-       (list 'cons `(quote ,key)
-	     (case (type-of-spec spec)
-	       (named-byte `(read-named-value-byte-from-reply data ,(second spec) ,(third spec)))
-	       (ubyte `(read-ubyte-from-reply data ,(second spec)))
-	       (string `(read-string-from-reply data ,(second spec) ,(third spec)))
-	       (uword `(read-uword-from-reply data ,(second spec)))
-	       (ulong `(read-ulong-from-reply data ,(second spec)))
-	       (data `(read-data-from-reply data ,(second spec) (read-uword-from-reply data ,(third spec))))
-	       (t (error "Unrecognized type ~S in specification" (type-of-spec spec)))))))))
+
+;;;;
+;;;; Send commands and read replies:
+;;;;
+
+(defun perform-command (fp args)
+  (let ((tc (fp-type-code fp))
+	(cc (fp-command-code fp))
+	(onewayp (not (reply-expected-for-type-code tc))))
+    (write-request tc cc (fp-request fp) args)
+    (unless onewayp
+      (read-reply cc (fp-reply fp)))))
+
+(defun write-request (tc cc fi args)
+  (write-to-nxt *nxt* (encode-frame tc cc fi args)))
+
+(defun encode-frame (tc cc fi args)
+  (let ((data-vector (make-array (fi-nbytes fi args)
+				 :element-type 'unsigned-byte
+				 ;; "offensive programming": Initialize
+				 ;; with a non-zero byte which is easy to
+				 ;; spot when debugging:
+				 :initial-element #xaa)))
+    (write-ubyte-to-command data-vector tc 0)
+    (write-ubyte-to-command data-vector cc 1)
+    (loop :for arg :in args
+          :for param :in (fi-parameters fi)
+          :do (encode-parameter param arg data-vector)) 
+    data-vector))
+
+(defun read-reply (cc fi)
+  (let* ((buf (read-from-nxt *nxt*))
+	 (tc2 (elt buf 0))
+	 (cc2 (elt buf 1)))
+    (unless (and (eql 2 tc2) (eql cc cc2))
+      (cerror "try to recover"
+	      "received unexpected reply ~D/~D instead of 2/~D"
+	      tc2 cc2 cc)
+      (setf fi (fp-reply (lookup-command-code cc2))))
+    (loop
+       :for param :in (fi-parameters fi)
+       :collect (cons (pi-name param) (decode-parameter param buf)))))
 
 
-(defmethod parse-nxt-reply ((code t) (data vector))
-  "Default fallback method."
-  data)
+;;;;
+;;;; encoding and decoding
+;;;;
+
+(defgeneric pi-nbytes (param)
+  (:method ((p status-parameter)) 1)
+  (:method ((p ubyte-parameter)) 1)
+  (:method ((p uword-parameter)) 2)
+  (:method ((p ulong-parameter)) 4)
+
+  ;; DATA
+  (:method ((p data-parameter/implicit-length))
+    :unknown)
+  (:method ((p data-parameter/specified-length))
+    :unknown)
+
+  ;; (:method ((p nbytes-mixing)) ;STRING- and DATA-PARAMETER/FIXED-LENGTH
+  ;;   ;; length is known, but PI-NBYTES is a slot reader already, so we
+  ;;   ;; do not need to define a method here
+  ;;   )
+
+  (:documentation
+   "Returns the length in bytes occupied this parameter. The exception is if
+    a 'data' spec is present.  The data is variable length and is not
+    accounted for.  However, if the size of the data is stored in the frame,
+    the ubyte where the length of the data is stored IS taken into account."))
+
+(defun +& (a b)
+  "adds numbers, but lets symbols fall through"
+  (cond ((symbolp a) a)
+	((symbolp b) b)
+	(t (+ a b))))
+
+(defun pi-end (p)
+  "The offset of the first byte following the parameter.
+   Returns :unknown if the end is not known (for a DATA-PARAMETER)."
+  (+& (pi-offset p) (pi-nbytes p)))
+
+(defun pi-last-byte (p)
+  "The offset of the parameter's last byte, i.e. the byte preceding PI-END.
+   Returns :unknown if the end is not known (for a DATA-PARAMETER)."
+  (+& (pi-end p) -1))
+
+(defgeneric encode-parameter (param val into-vector)
+
+  (:method ((param ubyte-parameter) val vector)
+    (write-ubyte-to-command vector val (pi-offset param)))
+
+  (:method ((param status-parameter) val vector)
+    (error "status parameter expected only in replies"))
+
+  (:method ((param string-parameter) val vector)
+    (let* ((bytes (babel:string-to-octets
+		   val
+		   :encoding (babel-encodings:get-character-encoding :ascii)))
+	   (actual (length bytes))
+	   (start (pi-offset param))
+	   (end (pi-end param)))
+      (assert (< (1+ actual) end))
+      (replace vector bytes :start1 start)
+      (fill vector 0 :start (+ start actual) :end end)))
+
+  (:method ((param uword-parameter) val vector)
+    (write-uword-to-command vector val (pi-offset param)))
+
+  (:method ((param ulong-parameter) val vector)
+    (write-ulong-to-command vector val (pi-offset param)))
+
+  (:method ((param data-parameter/fixed-length) val vector)
+    (assert (eql (length val) (pi-nbytes param)))
+    (replace vector val :start1 (pi-offset param)))
+
+  (:method ((param data-parameter/implicit-length) val vector)
+    (replace vector val :start1 (pi-offset param)))
+
+  (:method ((param data-parameter/specified-length) val vector)
+    (encode-parameter (pi-size-parameter param)
+		      (+ (length val) (pi-adjust-size param))
+		      vector)
+    (replace vector val :start1 (pi-offset param))))
+
+(defgeneric decode-parameter (param vector)
+
+  (:method ((param ubyte-parameter) vector)
+    (read-ubyte-from-reply vector (pi-offset param)))
+
+  (:method ((param status-parameter) vector)
+    (let ((code (read-ubyte-from-reply vector (pi-offset param))))
+      (getf *status-values* code code)))
+
+  (:method ((param string-parameter) vector)
+    (let ((offset (pi-offset param))
+	  (end (pi-end param))
+	  (enc (babel-encodings:get-character-encoding :ascii)))
+      (babel:octets-to-string vector
+			      :start offset
+			      :end (min end
+					(position 0 vector :start offset))
+			      :encoding enc)))
+
+  (:method ((param uword-parameter) vector)
+    (read-uword-from-reply vector (pi-offset param)))
+
+  (:method ((param ulong-parameter) vector)
+    (read-ulong-from-reply vector (pi-offset param)))
+
+  (:method ((param data-parameter/fixed-length) vector)
+    (subseq vector (pi-offset param) (pi-end param)))
+  
+  (:method ((param data-parameter/implicit-length) vector)
+    ;; At this point you might ask: isn't there padding going on with USB?
+    ;; Yes, but this method never actually gets called: This kind of parameter
+    ;; gets only encoded by us, never decoded.
+    (warn "unexpectedly decoding a DATA-PARAMETER/IMPLICIT-LENGTH")
+    (subseq vector (pi-offset param)))
+  
+  (:method ((param data-parameter/specified-length) vector)
+    (let ((offset (pi-offset param))
+	  (nbytes (- (decode-parameter (pi-size-parameter param) vector)
+		     (pi-adjust-size param))))
+      (subseq vector offset (+ offset nbytes)))))

@@ -10,7 +10,7 @@
 (in-package :nxt.system)
 
 (defsystem :nxt
-  :depends-on ("cffi" "static-vectors")
+  :depends-on ("cffi" "static-vectors" "babel")
   :version "0.0.1"
   :serial t
   :components ((:file "package")
