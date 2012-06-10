@@ -280,9 +280,9 @@
     `(progn
        (setf (fp-request (ensure-frame-pair ',name ',type-code ',command-code))
 	     (parse-frame-info ',args))
-       (defun ,name (&key ,@argnames)
+       (defun ,name (&key (nxt *nxt*) ,@argnames)
 	 (let ((fp (load-time-value (find-frame-pair ',name))))
-	   (perform-command fp (list ,@argnames)))))))
+	   (perform-command nxt fp (list ,@argnames)))))))
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
   "Creates the command function `name' which is a nxt command with the
@@ -360,16 +360,16 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 ;;;; Send commands and read replies:
 ;;;;
 
-(defun perform-command (fp args)
+(defun perform-command (nxt fp args)
   (let ((tc (fp-type-code fp))
 	(cc (fp-command-code fp))
 	(onewayp (not (reply-expected-for-type-code tc))))
-    (write-request tc cc (fp-request fp) args)
+    (write-request nxt tc cc (fp-request fp) args)
     (unless onewayp
-      (read-reply cc (fp-reply fp)))))
+      (read-reply nxt cc (fp-reply fp)))))
 
-(defun write-request (tc cc fi args)
-  (write-to-nxt *nxt* (encode-frame tc cc fi args)))
+(defun write-request (nxt tc cc fi args)
+  (write-to-nxt nxt (encode-frame tc cc fi args)))
 
 (defun encode-frame (tc cc fi args)
   (let ((data-vector (make-array (fi-nbytes fi args)
@@ -385,8 +385,8 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
           :do (encode-parameter param arg data-vector)) 
     data-vector))
 
-(defun read-reply (cc fi)
-  (let* ((buf (read-from-nxt *nxt*))
+(defun read-reply (nxt cc fi)
+  (let* ((buf (read-from-nxt nxt))
 	 (tc2 (elt buf 0))
 	 (cc2 (elt buf 1)))
     (unless (and (eql 2 tc2) (eql cc cc2))
