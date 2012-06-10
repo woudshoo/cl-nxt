@@ -520,3 +520,66 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 	  (nbytes (- (decode-parameter (pi-size-parameter param) vector)
 		     (pi-adjust-size param))))
       (subseq vector offset (+ offset nbytes)))))
+
+;;;; Introspection
+
+(defun list-all-commands (&optional apropos)
+  (sort (loop for fp across *code-to-info-table*
+	   when (and fp
+		     (or (null apropos)
+			 (search (string-upcase apropos)
+				 (string (fp-name fp)))))
+	   collect fp)
+	#'string-lessp
+	:key (alexandria:compose #'string #'fp-name)))
+
+(defun show-commands (&optional apropos)
+  (dolist (fp (list-all-commands apropos))
+    (format t "=========================================================~%")
+    (show-command fp)
+    (terpri))
+  nil)
+
+(defun show-command (fp)
+  (format t "Frame pair ~A~%" (fp-name fp))
+  (format t "  Type code    #x~2,'0X~%" (fp-type-code fp))
+  (format t "  Command code #x~2,'0X~%" (fp-command-code fp))
+  (format t "~%  Request: ")
+  (show-frame-info (fp-request fp))
+  (format t "  Reply:   ")
+  (show-frame-info (fp-reply fp)))
+
+(defun variable-length-frame-p (fi)
+  (find-if (lambda (x)
+	     (typep x 'variable-length-data-parameter))
+	   (fi-parameters fi)))
+
+(defun show-frame-info (fi)
+  (let ((variable-length-p (variable-length-frame-p fi))
+	(params (fi-parameters fi))
+	(n (n-static-bytes fi)))
+    (if variable-length-p
+	(format t "Variable-length frame of size >= ~D" n)
+	(format t "Fixed-length frame of size ~D" n))
+    (format t " with ~D parameter~:P~%" (length params))
+    (when params
+      (format t "      offset, name                  length          ~%")
+      (format t "      ---------------------------------------------------~%")
+      (dolist (p params)
+	(format t "      ~2D ~A ~37T~2D"
+		(pi-offset p)
+		(pi-name p)
+		(pi-nbytes p))
+	(when (typep p 'data-parameter/specified-length)
+	  (format t ", size: ~A~@[, adjust: ~D~]"
+		  (pi-name (pi-size-parameter p))
+		  (and (not (zerop (pi-adjust-size p)))
+		       (pi-adjust-size p))))
+	(format t "~16T~A~%" (etypecase p
+			       (status-parameter "(status byte)")
+			       (string-parameter "[string]")
+			       (ubyte-parameter  "[ubyte]")
+			       (uword-parameter  "[uword]")
+			       (ulong-parameter  "[ulong]")
+			       (data-parameter   "[data]"))))
+      (terpri))))

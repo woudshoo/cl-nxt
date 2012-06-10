@@ -52,7 +52,12 @@
 	   #:nxt-ls-write
 	   #:nxt-ls-read
 	   #:nxt-get-current-program-name
-	   #:nxt-message-read))
+	   #:nxt-message-read
+
+	   ;; introspection
+	   #:list-all-commands
+	   #:show-commands
+	   #:show-command))
 
 
 (pushnew :nxt *features*)
