@@ -63,10 +63,6 @@
 ;;;; Part 2
 ;; Macros to defin nxt-commands and their supporting functions.
 
-(defun reply-expected-for-type-code (code)
-  "t if the nxt command with type code `code' will generate a reply."
-    (eql 0 (ldb (byte 1 7) code)))
-
 
 ;;;;
 ;;;; FRAME-INFO: Description of the two frames (request and reply) which
@@ -280,9 +276,9 @@
     `(progn
        (setf (fp-request (ensure-frame-pair ',name ',type-code ',command-code))
 	     (parse-frame-info ',args))
-       (defun ,name (&key (nxt *nxt*) ,@argnames)
+       (defun ,name (&key (nxt *nxt*) (onewayp nil) ,@argnames)
 	 (let ((fp (load-time-value (find-frame-pair ',name))))
-	   (perform-command nxt fp (list ,@argnames)))))))
+	   (perform-command nxt fp onewayp (list ,@argnames)))))))
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
   "Creates the command function `name' which is a nxt command with the
@@ -360,16 +356,15 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 ;;;; Send commands and read replies:
 ;;;;
 
-(defun perform-command (nxt fp args)
+(defun perform-command (nxt fp onewayp args)
   (let ((tc (fp-type-code fp))
-	(cc (fp-command-code fp))
-	(onewayp (not (reply-expected-for-type-code tc))))
-    (write-request nxt tc cc (fp-request fp) args)
+	(cc (fp-command-code fp)))
+    (write-request nxt tc cc (fp-request fp) onewayp args)
     (unless onewayp
       (read-reply nxt cc (fp-reply fp)))))
 
-(defun write-request (nxt tc cc fi args)
-  (write-to-nxt nxt (encode-frame tc cc fi args)))
+(defun write-request (nxt tc cc fi onewayp args)
+  (write-to-nxt nxt (encode-frame (logior tc (if onewayp #x80 0)) cc fi args)))
 
 (defun encode-frame (tc cc fi args)
   (let ((data-vector (make-array (fi-nbytes fi args)
