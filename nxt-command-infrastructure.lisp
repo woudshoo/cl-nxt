@@ -76,8 +76,10 @@
    (request      :initarg :request      :accessor fp-request)
    (reply        :initarg :reply        :accessor fp-reply)))
 
-(defun find-frame-pair (name)
-  (get name 'frame-pair))
+(defun find-frame-pair (name &optional (errorp t))
+  (or (get name 'frame-pair)
+      (when errorp
+	(error "no frame pair found of name ~A" name))))
 
 (defvar *code-to-info-table* (make-array 256 :initial-element nil))
 
@@ -88,12 +90,12 @@
 (defun clear-all ()
   ;; clear out everything manually, just in case the two maps are out of sync
   (do-symbols (sym (find-package :nxt))
-    (when (find-frame-pair sym)
+    (when (find-frame-pair sym nil)
       (setf (get sym 'frame-pair) nil)))
   (fill *code-to-info-table* nil))
 
 (defun ensure-frame-pair (name type-code command-code)
-  (or (find-frame-pair name)
+  (or (find-frame-pair name nil)
       (setf (find-frame-pair name)
 	    (make-instance 'frame-pair
 			   :name name

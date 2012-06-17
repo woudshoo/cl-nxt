@@ -54,6 +54,11 @@
 	   #:nxt-get-current-program-name
 	   #:nxt-message-read
 
+	   ;; lower-level functions for users not wishing to go through
+	   ;; the individual exported symbols above:
+	   #:find-frame-pair
+	   #:perform-command
+
 	   ;; introspection
 	   #:list-all-commands
 	   #:show-commands
