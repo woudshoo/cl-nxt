@@ -276,9 +276,15 @@
     `(progn
        (setf (fp-request (ensure-frame-pair ',name ',type-code ',command-code))
 	     (parse-frame-info ',args))
-       (defun ,name (&key (nxt *nxt*) (onewayp nil) ,@argnames)
-	 (let ((fp (load-time-value (find-frame-pair ',name))))
-	   (perform-command nxt fp onewayp (list ,@argnames)))))))
+       (defun ,name (&key (nxt *nxt*)
+		          (onewayp nil)
+		          check-status
+		          ,@argnames)
+	 (perform-command nxt
+			  (load-time-value (find-frame-pair ',name))
+			  onewayp
+			  check-status
+			  (list ,@argnames))))))
 
 (defmacro def-nxt-command (name name-code type-code &rest rest)
   "Creates the command function `name' which is a nxt command with the
@@ -356,12 +362,26 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 ;;;; Send commands and read replies:
 ;;;;
 
-(defun perform-command (nxt fp onewayp args)
+(defun perform-command (nxt fp onewayp expected-status args)
+  (when (and expected-status onewayp)
+    (error "cannot check status of a oneway command"))
   (let ((tc (fp-type-code fp))
 	(cc (fp-command-code fp)))
     (write-request nxt tc cc (fp-request fp) onewayp args)
     (unless onewayp
-      (read-reply nxt cc (fp-reply fp)))))
+      (read-reply/checked nxt cc (fp-reply fp) expected-status))))
+
+(defun read-reply/checked (nxt cc fi expected-status)
+  (let ((alist (read-reply nxt cc fi))
+	(expected-status (case expected-status
+			 ((t) :success)
+			 (t expected-status))))
+    (when (and expected-status
+	       (not (eq (cdar alist) expected-status)))
+      (error "expected status ~A but received ~A"
+	     expected-status
+	     (cdar alist)))
+    alist))
 
 (defun write-request (nxt tc cc fi onewayp args)
   (write-to-nxt nxt (encode-frame (logior tc (if onewayp #x80 0)) cc fi args)))
