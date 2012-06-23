@@ -113,7 +113,8 @@
 
 (defclass frame-info ()
   ((n-static-bytes :initform nil        :accessor %n-static-bytes)
-   (parameters     :initarg :parameters :accessor fi-parameters)))
+   (parameters     :initarg :parameters :accessor fi-parameters)
+   (explicit-parameters                 :accessor fi-explicit-parameters)))
 
 (defun parse-frame-info (specs)
   (let ((parameters (parse-parameter-specs specs)))
@@ -140,14 +141,17 @@
     (when (typep param 'data-parameter/specified-length)
       (let ((size (pi-size-parameter param)))
 	(when (symbolp size)
-	  (setf (pi-size-parameter param)
-		(or (find size params :key #'pi-name)
-		    (error "referenced size parameter not found: ~A"
-			   size))))))))
+	  (let ((q (or (find size params :key #'pi-name)
+		       (error "referenced size parameter not found: ~A"
+			      size))))
+	    (setf (pi-size-parameter param) q)
+	    (setf (size-parameter-p q) t)))))))
 
 (defmethod initialize-instance :after ((instance frame-info) &key)
   (link-size-parameters! (fi-parameters instance))
-  (check-offsets (fi-parameters instance)))
+  (check-offsets (fi-parameters instance))
+  (setf (fi-explicit-parameters instance)
+	(remove-if #'size-parameter-p (fi-parameters instance))))
 
 ;;;;
 ;;;; PARAMETER-INFO
@@ -172,7 +176,11 @@
 
 (defclass status-parameter (parameter-info) ())
 
-(defclass numeric-parameter (parameter-info) ())
+(defmethod size-parameter-p ((parameter parameter-info))
+  nil)
+
+(defclass numeric-parameter (parameter-info)
+  ((size-parameter-p :initform nil :accessor size-parameter-p)))
 (defclass ubyte-parameter (numeric-parameter) ())
 (defclass uword-parameter (numeric-parameter) ())
 (defclass ulong-parameter (numeric-parameter) ())
@@ -250,7 +258,7 @@
 (defun fi-nbytes (fi arguments)
   (+ (n-static-bytes fi)
      (loop for arg in arguments
-	   for param in (fi-parameters fi)
+	   for param in (fi-explicit-parameters fi)
 	   when (typep param 'variable-length-data-parameter)
 	   summing (length arg))))
 
@@ -272,9 +280,21 @@
 ;;;; command definition macros 
 ;;;;
 
+(defun argnames-from-args (args)
+  ;; hack: collect the argument names, expect for data size parameters
+  (let ((sizes (loop
+		  :for spec :in (cdr args) :by #'cddr
+		  :for size = (getf (cddr spec) :size)
+		  :when (and size (symbolp size))
+		  :collect size)))
+    (loop
+       :for key :in args :by #'cddr
+       :unless (member key sizes)
+       :collect key)))
+
 ;; TRANSLATING THE FORMS INTO COMMANDS
 (defun create-nxt-command-form (name type-code command-code &rest args)
-  (let ((argnames (loop :for key :in args :by #'cddr :collect key)))
+  (let ((argnames (argnames-from-args args)))
     `(progn
        (setf (fp-request (ensure-frame-pair ',name ',type-code ',command-code))
 	     (parse-frame-info ',args))
@@ -402,7 +422,7 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
     (write-ubyte-to-command data-vector tc 0)
     (write-ubyte-to-command data-vector cc 1)
     (loop :for arg :in args
-          :for param :in (fi-parameters fi)
+          :for param :in (fi-explicit-parameters fi)
           :do (encode-parameter param arg data-vector)) 
     data-vector))
 
@@ -483,9 +503,11 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
       (fill vector 0 :start (+ start actual) :end end)))
 
   (:method ((param uword-parameter) val vector)
+    (check-type val (unsigned-byte 8))
     (write-uword-to-command vector val (pi-offset param)))
 
   (:method ((param ulong-parameter) val vector)
+    (check-type val (unsigned-byte 32))
     (write-ulong-to-command vector val (pi-offset param)))
 
   (:method ((param data-parameter/fixed-length) val vector)
