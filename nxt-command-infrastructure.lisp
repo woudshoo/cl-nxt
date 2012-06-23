@@ -278,11 +278,11 @@
     `(progn
        (setf (fp-request (ensure-frame-pair ',name ',type-code ',command-code))
 	     (parse-frame-info ',args))
-       (defun ,name (&key (nxt *nxt*)
+       (defun ,name (&key ,@argnames
+		          (nxt *nxt*)
 		          (onewayp nil)
 		          (return-style :alist)
-		          check-status
-		          ,@argnames)
+		          check-status)
 	 (perform-command nxt
 			  (load-time-value (find-frame-pair ',name))
 			  onewayp
