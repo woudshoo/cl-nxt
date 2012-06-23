@@ -394,7 +394,7 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 
 (defun encode-frame (tc cc fi args)
   (let ((data-vector (make-array (fi-nbytes fi args)
-				 :element-type 'unsigned-byte
+				 :element-type '(unsigned-byte 8)
 				 ;; "offensive programming": Initialize
 				 ;; with a non-zero byte which is easy to
 				 ;; spot when debugging:
