@@ -280,11 +280,13 @@
 	     (parse-frame-info ',args))
        (defun ,name (&key (nxt *nxt*)
 		          (onewayp nil)
+		          (return-style :alist)
 		          check-status
 		          ,@argnames)
 	 (perform-command nxt
 			  (load-time-value (find-frame-pair ',name))
 			  onewayp
+			  return-style
 			  check-status
 			  (list ,@argnames))))))
 
@@ -364,16 +366,16 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 ;;;; Send commands and read replies:
 ;;;;
 
-(defun perform-command (nxt fp onewayp expected-status args)
+(defun perform-command (nxt fp onewayp return-style expected-status args)
   (when (and expected-status onewayp)
     (error "cannot check status of a oneway command"))
   (let ((tc (fp-type-code fp))
 	(cc (fp-command-code fp)))
     (write-request nxt tc cc (fp-request fp) onewayp args)
     (unless onewayp
-      (read-reply/checked nxt cc (fp-reply fp) expected-status))))
+      (read-reply/checked nxt cc (fp-reply fp) return-style expected-status))))
 
-(defun read-reply/checked (nxt cc fi expected-status)
+(defun read-reply/checked (nxt cc fi return-style expected-status)
   (let ((alist (read-reply nxt cc fi))
 	(expected-status (case expected-status
 			 ((t) :success)
@@ -383,7 +385,9 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
       (error "expected status ~A but received ~A"
 	     expected-status
 	     (cdar alist)))
-    alist))
+    (ecase return-style
+      (:alist alist)
+      (:values (apply #'values (mapcar #'cdr alist))))))
 
 (defun write-request (nxt tc cc fi onewayp args)
   (write-to-nxt nxt (encode-frame (logior tc (if onewayp #x80 0)) cc fi args)))
