@@ -184,6 +184,9 @@
 (defclass ubyte-parameter (numeric-parameter) ())
 (defclass uword-parameter (numeric-parameter) ())
 (defclass ulong-parameter (numeric-parameter) ())
+(defclass sbyte-parameter (numeric-parameter) ())
+(defclass sword-parameter (numeric-parameter) ())
+(defclass slong-parameter (numeric-parameter) ())
 
 (defclass data-parameter (parameter-info) ())
 (defclass variable-length-data-parameter (data-parameter) ())
@@ -248,6 +251,9 @@
 	     (ubyte 'ubyte-parameter)
 	     (uword 'uword-parameter)
 	     (ulong 'ulong-parameter)
+	     (sbyte 'sbyte-parameter)
+	     (sword 'sword-parameter)
+	     (slong 'slong-parameter)
 	     (t (error "Unknown type ~S in specification" spec)))))
       (apply #'make-instance
 	     class
@@ -449,6 +455,9 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
   (:method ((p ubyte-parameter)) 1)
   (:method ((p uword-parameter)) 2)
   (:method ((p ulong-parameter)) 4)
+  (:method ((p sbyte-parameter)) 1)
+  (:method ((p sword-parameter)) 2)
+  (:method ((p slong-parameter)) 4)
 
   ;; DATA
   (:method ((p data-parameter/implicit-length))
@@ -486,7 +495,12 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 (defgeneric encode-parameter (param val into-vector)
 
   (:method ((param ubyte-parameter) val vector)
+    (check-type val (unsigned-byte 8))
     (write-ubyte-to-command vector val (pi-offset param)))
+
+  (:method ((param sbyte-parameter) val vector)
+    (check-type val (signed-byte 8))
+    (write-ubyte-to-command vector (logand val #xff) (pi-offset param)))
 
   (:method ((param status-parameter) val vector)
     (error "status parameter expected only in replies"))
@@ -503,12 +517,20 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
       (fill vector 0 :start (+ start actual) :end end)))
 
   (:method ((param uword-parameter) val vector)
-    (check-type val (unsigned-byte 8))
+    (check-type val (unsigned-byte 16))
     (write-uword-to-command vector val (pi-offset param)))
+
+  (:method ((param sword-parameter) val vector)
+    (check-type val (signed-byte 16))
+    (write-uword-to-command vector (logand val #xffff) (pi-offset param)))
 
   (:method ((param ulong-parameter) val vector)
     (check-type val (unsigned-byte 32))
     (write-ulong-to-command vector val (pi-offset param)))
+
+  (:method ((param ulong-parameter) val vector)
+    (check-type val (signed-byte 32))
+    (write-ulong-to-command vector (logand val #xffffffff) (pi-offset param)))
 
   (:method ((param data-parameter/fixed-length) val vector)
     (assert (eql (length val) (pi-nbytes param)))
@@ -523,10 +545,18 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 		      vector)
     (replace vector val :start1 (pi-offset param))))
 
+(defun sign-extend (bits value)
+  (if (logbitp (1- bits) value)
+      (dpb value (byte bits 0) -1)
+      value))
+
 (defgeneric decode-parameter (param vector)
 
   (:method ((param ubyte-parameter) vector)
     (read-ubyte-from-reply vector (pi-offset param)))
+
+  (:method ((param sbyte-parameter) vector)
+    (sign-extend 8 (read-ubyte-from-reply vector (pi-offset param))))
 
   (:method ((param status-parameter) vector)
     (let ((code (read-ubyte-from-reply vector (pi-offset param))))
@@ -545,8 +575,14 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
   (:method ((param uword-parameter) vector)
     (read-uword-from-reply vector (pi-offset param)))
 
+  (:method ((param sword-parameter) vector)
+    (sign-extend 16 (read-uword-from-reply vector (pi-offset param))))
+
   (:method ((param ulong-parameter) vector)
     (read-ulong-from-reply vector (pi-offset param)))
+
+  (:method ((param slong-parameter) vector)
+    (sign-extend 32 (read-ulong-from-reply vector (pi-offset param))))
 
   (:method ((param data-parameter/fixed-length) vector)
     (subseq vector (pi-offset param) (pi-end param)))

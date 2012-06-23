@@ -114,12 +114,12 @@
     power-set-point (ubyte 4)
     mode (ubyte 5)
     regulation-mode (ubyte 6)
-    turn-ratio (ubyte 7) ;; needs to be sbyte
+    turn-ratio (sbyte 7)
     run-state (ubyte 8)
     tacho-limit (ulong 9)
-    tacho-count (ulong 13) ;; should be slong
-    block-tacho-count (ulong 17) ;; should be slong)
-    rotation-count (ulong 21)) ;; should be slong
+    tacho-count (slong 13)
+    block-tacho-count (slong 17)
+    rotation-count (slong 21))
 ;;--------------------------------------------------------------------------------
 (def-nxt-command nxt-get-input-values #x00 #x07 input-port (ubyte 2))
 (def-reply-package #x07
@@ -130,8 +130,8 @@
     sensor-mode (ubyte 7)
     raw-a/d-value (uword 8)
     normalized-a/d-value (uword 10)
-    scaled-value (uword 12)  ;; should be sword
-    calibrated-value (uword 14)) ;; should be sword
+    scaled-value (sword 12)
+    calibrated-value (sword 14))	;unused according to spec
 ;;--------------------------------------------------------------------------------
 (def-nxt-command nxt-reset-input-scaled-value #x00 #x08 input-port (ubyte 2))
 (def-reply-package #x08)
