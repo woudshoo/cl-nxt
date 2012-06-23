@@ -62,7 +62,15 @@
 	   ;; introspection
 	   #:list-all-commands
 	   #:show-commands
-	   #:show-command))
+	   #:show-command
 
+	   ;; programs, in particular MotorControl
+	   #:running-a-program-p
+	   #:stop-current-program
+	   #:start-program
+
+	   ;; MotorControl
+	   #:restart-motor-control
+	   #:motor-control))
 
 (pushnew :nxt *features*)

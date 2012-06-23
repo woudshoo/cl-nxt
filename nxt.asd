@@ -19,4 +19,5 @@
 	       (:file "nxt-usb")
 	       (:file "nxt-command-infrastructure")
 	       (:file "nxt-commands")
-	       (:file "nxt-utilities")))
+	       (:file "nxt-utilities")
+	       (:file "nxt-motorcontrol")))

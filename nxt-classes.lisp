@@ -3,12 +3,20 @@
 
 (in-package :nxt)
 
-(defclass nxt () ()
+(defclass nxt ()
+    ((motor-states :accessor motor-states))
   (:documentation "Common superclass of BLUETOOTH-NXT and USB-NXT."))
 
 (defvar *nxt* nil
   "Holds the default NXT instance (which functions use by default, if no
    explicit NXT parameter is given. Replaces the old *connection* variable.")
+
+(defmethod initialize-instance :after ((instance nxt) &key)
+  (setf (motor-states instance)
+	(coerce (loop repeat 3 collect (make-instance 'motor-state)) 'vector)))
+
+(defclass motor-state ()
+    ((command-timestamp :initform 0 :accessor command-timestamp)))
 
 ;;;; The following functions find or close an NXT, and take care of the *NXT*
 ;;;; default value.
