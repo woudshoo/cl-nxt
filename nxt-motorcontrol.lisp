@@ -12,8 +12,17 @@
 ;;;; We assume that the .rxe has already been uploaded to the device
 ;;;; manually (using NeXTool), and proceed to start the program
 ;;;; automatically once we need motors.
+
+;;;; We provide functions MOTOR-CONTROL (and STOP-MOTOR) that replace
+;;;; SET-OUTPUT-STATE, as well as QUERY-MOTOR which wraps GET-OUTPUT-STATE
+;;;; in a fashion that is compatible with motor control.
 ;;;;
+;;;; Users can use either the precise motor control or the old direct
+;;;; functions, but shouldn't blindly mix new and old functions.
+;;;; (This restriction applies to each motor separately.)
+
 ;;;; *motor-control-filename* gives the on-brick filename of the program.
+
 
 (defvar *motor-control-filename* "MotorControl22.rxe")
 
@@ -97,6 +106,12 @@
 	       (get-internal-real-time)))
      internal-time-units-per-second))
 
+;;;; Note: The MOTOR-CONTROL function does not check whether the motor is
+;;;; ready.  We expect the caller to have done (the equivalent of) a call
+;;;; to SLEEP-UNTIL-MOTOR-READY. Failure to do so will not be detected on
+;;;; the Lisp side (MotorControl beeps when it ignores a message it isn't
+;;;; ready for).
+
 (defun motor-control (first-motor second-motor ;or nil
 		      &key (nxt *nxt*)
 		           (power 0)
@@ -144,3 +159,83 @@
 						 (string (code-char 0)))
 				    :encoding :iso-8859-1)
 		     :check-status check-status))
+
+(defmacro with-motor-delays ((nxt port) &body body)
+  `(call-with-motor-delays (lambda () ,@body) ,nxt ,port))
+
+(defun call-with-motor-delays (fun nxt port)
+  (let* ((motor (elt (motor-states nxt) port))
+	 (timeout (compute-motor-timeout (list motor))))
+    (when (plusp timeout)
+      (sleep timeout))
+    (prog1
+	(funcall fun)
+      (note-motor-commanded motor))))
+
+;;;; They following functions are wrappers around direct NXT commands.
+;;;; They differ from the original versions in that they interact
+;;;; correctly with the MOTOR-CONTROL control function, in that they observe
+;;;; the necessary timeouts.
+
+(defun ensure-message-read (nxt remote-inbox local-inbox remove)
+  (let ((timeout (+ (get-internal-real-time)
+		    (* 3 internal-time-units-per-second))))
+    (loop
+       (multiple-value-bind (status port length data)
+	   (nxt::nxt-message-read :nxt nxt
+				  :return-style :values
+				  :remote-inbox remote-inbox
+				  :local-inbox local-inbox
+				  :remove (if remove 1 0))
+	 (declare (ignore length))
+	 (ecase status
+	   ((:success :specified-mailbox-queue-is-empty)
+	    (when (plusp (length data))
+	      (return (values data port))))
+	   (:no-active-program
+	    (error "MotorControl not running"))))
+       ;; This delay may look like it's the same as in MOTOR-READY-P, but
+       ;; actually we only want to avoid busy polling here.  Docs state that
+       ;; we don't have to do this for Bluetooth, but I suppose that's only
+       ;; because Bluetooth would impose an (even longer) timeout anyway.
+       ;; Since any shorter sleep we do here will be taken into account
+       ;; by Bluetooth, I don't see the need for an IF.
+       (sleep 1/100)
+       (when (> (get-internal-real-time) timeout)
+	 (error "no response from motor control")))))
+
+(defun stop-motor (port &key (nxt *nxt*))
+  (check-type port (integer 0 2))
+  (with-motor-delays (nxt port)
+    (nxt::nxt-set-output-state :nxt nxt
+			       :output-port port
+			       :power-set-point 0
+			       :mode 1
+			       :regulation-mode 0
+			       :turn-ratio 0
+			       :run-state 0
+			       :tacho-limit 0)))
+
+(defun motor-ready-p (port &key (nxt *nxt*))
+  (check-type port (integer 0 2))
+  (with-motor-delays (nxt port)
+    (send-string-message 1 (format nil "3~D" port) :nxt nxt)
+    (sleep 1/100)
+    (let ((data (ensure-message-read nxt 0 0 t)))
+      (cond
+	((eql (elt data 0) (digit-char port))
+	 (eql (elt data 1) #\1))
+	(t
+	 (warn "unexpected MotorControl response for port ~D (expected ~D); ignoring"
+	       (elt data 0) port)
+	 nil)))))
+
+(defun sleep-until-motor-ready (port &key (nxt *nxt*))
+  (loop until (motor-ready-p port :nxt nxt)))
+
+(defun query-motor
+    (port &rest keys &key (nxt *nxt*) result-style assert-status)
+  (declare (ignore result-style assert-status))
+  (check-type port (integer 0 2))
+  (with-motor-delays (nxt port)
+    (apply #'nxt::nxt-get-output-state :output-port port keys)))

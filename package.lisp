@@ -64,13 +64,17 @@
 	   #:show-commands
 	   #:show-command
 
-	   ;; programs, in particular MotorControl
+	   ;; programs
 	   #:running-a-program-p
 	   #:stop-current-program
 	   #:start-program
 
 	   ;; MotorControl
 	   #:restart-motor-control
-	   #:motor-control))
+	   #:motor-control
+	   #:stop-motor
+	   #:query-motor
+	   #:motor-ready-p
+	   #:sleep-until-motor-ready))
 
 (pushnew :nxt *features*)
