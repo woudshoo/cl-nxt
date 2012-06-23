@@ -161,7 +161,7 @@
 		 port (ubyte 2)
  		 tx-data-length (ubyte 3)
  		 rx-data-length (ubyte 4)
- 		 tx-data (data 5 :size tx-data-length :adjust-size -4))
+		 tx-data (data 5 :size tx-data-length))
 (def-reply-package #x0f)
 ;;--------------------------------------------------------------------------------
 (def-nxt-command nxt-ls-read #x00 #x10 port (ubyte 2))
