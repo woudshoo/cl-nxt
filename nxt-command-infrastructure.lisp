@@ -349,11 +349,11 @@ The method `(parse-nxt-reply ((code (eql code)) (data vector)) ...)'
 (defparameter *status-values* '(0 :success 
 				;; Direct commands
 				#x20 :pending-communication-transaction-in-progress
-				#x40 :speficied-mailbox-queue-is-empty
+				#x40 :specified-mailbox-queue-is-empty
 				#xbd :request-failed
 				#xbe :unknown-command-opcode
 				#xbf :insane-packet
-				#xc0 :dta-contains-out-of-range-values
+				#xc0 :data-contains-out-of-range-values
 				#xdd :communication-bus-error
 				#xde :no-free-memory-in-communication-buffer
 				#xdf :specified-channel/connection-is-not-valid
