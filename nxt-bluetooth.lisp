@@ -77,7 +77,7 @@
   "Required delay in seconds when switching between reading from
    and writing to the brick in either direction.")
 
-(defun %compute-bluetooth-timeout (nxt timestamp delay)
+(defun %compute-bluetooth-timeout (timestamp delay)
   (let* ((now (get-internal-real-time))
 	 (elapsed (/ (- now timestamp) internal-time-units-per-second)))
     (- delay elapsed)))
@@ -85,16 +85,13 @@
 (defgeneric compute-bluetooth-timeout (nxt delay-type)
   (:method (nxt (delay-type (eql :read)))
     (max 0
-	 (%compute-bluetooth-timeout nxt
-				     (write-timestamp nxt)
+	 (%compute-bluetooth-timeout (write-timestamp nxt)
 				     *bluetooth-delay-between-directions*)))
   (:method (nxt (delay-type (eql :write)))
     (max 0
-	 (%compute-bluetooth-timeout nxt
-				     (write-timestamp nxt)
+	 (%compute-bluetooth-timeout (write-timestamp nxt)
 				     *bluetooth-delay-between-writes*)
-	 (%compute-bluetooth-timeout nxt
-				     (read-timestamp nxt)
+	 (%compute-bluetooth-timeout (read-timestamp nxt)
 				     *bluetooth-delay-between-directions*))))
 
 (defun note-data-read (nxt)
