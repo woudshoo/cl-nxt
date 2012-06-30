@@ -75,6 +75,32 @@
 	   #:stop-motor
 	   #:query-motor
 	   #:motor-ready-p
-	   #:sleep-until-motor-ready))
+	   #:sleep-until-motor-ready
+
+	   ;; sensor utilities
+	   #:switch-on
+	   #:get-switch
+
+	   #:lightdetector-on
+	   #:light-off
+	   #:get-brightness-or-color
+
+	   #:ultrasonic-on
+	   #:get-ultrasonic
+
+	   #:acceleration-sensor-on
+	   #:get-acceleration
+	   
+	   #:angle-sensor-on
+	   #:get-angle-sensor-data
+	   #:get-current-angle
+	   #:get-accumulated-angle
+	   #:get-rpm
+
+	   #:compass-on
+	   #:get-compass
+
+	   #:enumerate-digital-sensors
+	   #:probe-digital-sensor))
 
 (pushnew :nxt *features*)

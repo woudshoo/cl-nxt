@@ -20,4 +20,5 @@
 	       (:file "nxt-command-infrastructure")
 	       (:file "nxt-commands")
 	       (:file "nxt-utilities")
-	       (:file "nxt-motorcontrol")))
+	       (:file "nxt-motorcontrol")
+	       (:file "nxt-sensors")))

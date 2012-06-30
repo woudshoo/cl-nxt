@@ -167,6 +167,14 @@
 (def-nxt-command nxt-ls-read #x00 #x10 port (ubyte 2))
 (def-reply-package #x10
 		   rx-data (data 3 :size 17))
+
+;; wrapper for nxt-ls-read which parses the extra length byte
+(defun ls-read (&rest keys)
+  (multiple-value-bind (status data)
+      (apply #'nxt-ls-read :return-style :values keys)
+    (let ((len (elt data 0)))
+      (values status (subseq data 1 (min (1+ len) (length data)))))))
+
 ;;--------------------------------------------------------------------------------
 (def-nxt-command nxt-get-current-program-name #x00 #x11)
 (def-reply-package #x11 file-name (string 3 :size 20))
