@@ -1,23 +1,23 @@
 \input texinfo
 @c %**start of header
-@setfilename nxt
+@setfilename nxt.info
 @settitle NXT Bluetooth Communication From Lisp
 @c %**end of header
 
 @copying
 Copyright @copyright{} 2010-2011, Willem Rein Oudshoorn
+Copyright @copyright{} 2012, David Lichteblau
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
+
     * Redistributions of source code must retain the above copyright
       notice, this list of conditions and the following disclaimer.
+
     * Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
-    * Neither the name of the <organization> nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -30,6 +30,11 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 @end copying
+
+@dircategory Common Lisp
+@direntry
+* NXT Bluetooth: (nxt).  Lego NXT Bluetooth Communication From Lisp.
+@end direntry
 
 @titlepage
 @title NXT Bluetooth
@@ -194,7 +199,7 @@ as an alist containing the following keys
        
 @table @code
 @item status 
-Should always be @code{:succes}.  Otherwise something strange 
+Should always be @code{:success}.  Otherwise something strange 
 is going on.   For a list of return states @xref{NXT Error Codes}.
 @item handle
 Is an integer which is irrelevant. It is the handle used
@@ -214,7 +219,7 @@ module is represented by an alist with the following keys
 
 @table @code
 @item status
-Should always be @code{:succes}.  If not, @xref{NXT Error Codes}.
+Should always be @code{:success}.  If not, @xref{NXT Error Codes}.
 @item handle
 Is irrelevant.  It is the handle used to query the NXT for modules.
 @item moduel-name
@@ -282,79 +287,79 @@ it probably raises a condition, but no guarantees are given.
 @multitable @columnfractions 0.15 0.85
 @headitem Value @tab Symbol
 @item #x00 
-@tab @code {:succes}
+@tab @code{:success}
 @item #x20
-@tab @code {:pending-communication-transaction-in-progress}
+@tab @code{:pending-communication-transaction-in-progress}
 @item #x40
-@tab @code {:speficied-mailbox-queue-is-empty}
+@tab @code{:speficied-mailbox-queue-is-empty}
 @item #x81
-@tab @code {:no-more-handles}
+@tab @code{:no-more-handles}
 @item #x82
-@tab @code {:no-space}
+@tab @code{:no-space}
 @item #x83
-@tab @code {:no-more-files}
+@tab @code{:no-more-files}
 @item #x84
-@tab @code {:end-of-file-expected}
+@tab @code{:end-of-file-expected}
 @item #x85
-@tab @code {:end-of-file}
+@tab @code{:end-of-file}
 @item #x86
-@tab @code {:not-a-linear-file}
+@tab @code{:not-a-linear-file}
 @item #x87
-@tab @code {:file-not-found}
+@tab @code{:file-not-found}
 @item #x88
-@tab @code {:handle-all-ready-closed}
+@tab @code{:handle-all-ready-closed}
 @item #x89
-@tab @code {:no-linear-space}
+@tab @code{:no-linear-space}
 @item #x8a
-@tab @code {:undefined-error}
+@tab @code{:undefined-error}
 @item #x8b
-@tab @code {:file-busy}
+@tab @code{:file-busy}
 @item #x8c
-@tab @code {:no-write-buffers}
+@tab @code{:no-write-buffers}
 @item #x8d
-@tab @code {:append-not-possible}
+@tab @code{:append-not-possible}
 @item #x8e
-@tab @code {:file-is-full}
+@tab @code{:file-is-full}
 @item #x8f
-@tab @code {:file-exists}
+@tab @code{:file-exists}
 @item #x90
-@tab @code {:module-not-found}
+@tab @code{:module-not-found}
 @item #x91
-@tab @code {:out-of-boundary}
+@tab @code{:out-of-boundary}
 @item #x92
-@tab @code {:illegal-file-name}
+@tab @code{:illegal-file-name}
 @item #x93
-@tab @code {:illegal-handle}
+@tab @code{:illegal-handle}
 @item #xbd
-@tab @code {:request-failed}
+@tab @code{:request-failed}
 @item #xbe
-@tab @code {:unknown-command-opcode}
+@tab @code{:unknown-command-opcode}
 @item #xbf
-@tab @code {:insane-packet}
+@tab @code{:insane-packet}
 @item #xc0
-@tab @code {:dta-contains-out-of-range-values}
+@tab @code{:dta-contains-out-of-range-values}
 @item #xdd
-@tab @code {:communication-bus-error}
+@tab @code{:communication-bus-error}
 @item #xde
-@tab @code {:no-free-memory-in-communication-buffer}
+@tab @code{:no-free-memory-in-communication-buffer}
 @item #xdf
-@tab @code {:specified-channel/connection-is-not-valid}
+@tab @code{:specified-channel/connection-is-not-valid}
 @item #xe0
-@tab @code {:specified-channel/connection-not-configured-or-busy}
+@tab @code{:specified-channel/connection-not-configured-or-busy}
 @item #xec
-@tab @code {:no-active-program}
+@tab @code{:no-active-program}
 @item #xed
-@tab @code {:illegal-size-specified}
+@tab @code{:illegal-size-specified}
 @item #xee
-@tab @code {:illegal-mailbox-queue-id-specified}
+@tab @code{:illegal-mailbox-queue-id-specified}
 @item #xef
-@tab @code {:attempted-to-access-invalid-field-of-structure}
+@tab @code{:attempted-to-access-invalid-field-of-structure}
 @item #xf0
-@tab @code {:bad-input-or-output-specified}
+@tab @code{:bad-input-or-output-specified}
 @item #xfb
-@tab @code {:insufficient-memory-available}
+@tab @code{:insufficient-memory-available}
 @item #xff
-@tab @code {:bad-arguments}
+@tab @code{:bad-arguments}
 @end multitable
 
 @node Index
@@ -363,4 +368,3 @@ it probably raises a condition, but no guarantees are given.
 @printindex cp
 
 @bye
-
