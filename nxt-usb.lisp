@@ -22,6 +22,7 @@
 ;;;;
 
 (cffi:define-foreign-library :libusb
+  (:darwin "libusb-1.0.0.dylib")
   (:unix "libusb-1.0.so.0"))
 
 (defmacro defcfun (name ret &rest args)
