@@ -53,6 +53,8 @@
 ;;;; kind of asymmetry -- Bluetooth needs a /dev/something device, whereas
 ;;;; USB just takes a logical brick name.
 
+(declaim (ftype (function (t &optional t) t) open-tcp-nxt))
+
 (defun find-an-nxt
     (&optional (look-for-types '(:usb :bluetooth))
                (device *default-bluetooth-device*)
@@ -64,6 +66,7 @@
     (let ((nxt
 	   (ecase kind
 	     (:usb (find-usb-nxt))
+	     (:tcp (open-tcp-nxt device))
 	     (:bluetooth (open-bluetooth-nxt device :if-does-not-exist nil)))))
       (when nxt
 	(return nxt)))))

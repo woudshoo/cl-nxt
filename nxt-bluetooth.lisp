@@ -8,17 +8,28 @@
    (write-timestamp :initform 0 :accessor write-timestamp)))
 
 (defun open-bluetooth-nxt (device &key (if-does-not-exist :error))
-  (let ((connection (open device
-			  :direction :io
-			  :element-type  '(unsigned-byte 8)
-			  :if-does-not-exist if-does-not-exist
-			  :if-exists :overwrite)))
+  (let ((connection
+	 #-sbcl
+	  (open device
+		:direction :io
+		:element-type  '(unsigned-byte 8)
+		:if-does-not-exist if-does-not-exist
+		:if-exists :overwrite)
+	  #+sbcl
+	  (sb-bluetooth:open-rfcomm-channel
+	   device ;e.g. "00:16:53:17:76:19"
+	   1
+	   :element-type '(unsigned-byte 8))))
     (and connection
 	 (make-instance 'bluetooth-nxt :connection connection))))
 
 (defmethod close-nxt ((nxt bluetooth-nxt))
   (close (connection nxt) :abort t)
   (setf (connection nxt) nil))
+
+(defmethod print-object ((object bluetooth-nxt) stream)
+  (print-unreadable-object (object stream :type t)
+    (format stream "~A" (connection object))))
 
 ;;;; Frame reading: The bluetooth protocol wants us to prepend a length
 ;;;; value to each data vector (unlike the USB protocol!).  Make it so.

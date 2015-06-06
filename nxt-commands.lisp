@@ -93,7 +93,7 @@
 ;;--------------------------------------------------------------------------------
 (def-nxt-command nxt-set-output-state #x00 #x04 
 		 output-port (ubyte 2) 
-		 power-set-point (ubyte 3)
+		 power-set-point (sbyte 3)
 		 mode (ubyte 4)
 		 regulation-mode (ubyte 5)
 		 turn-ratio (ubyte 6) 
@@ -186,4 +186,4 @@
 (def-reply-package #x13 
     local-inbox (ubyte 3) 
     message-size (ubyte 4) 
-    message-data (string 5 :size 59))
+    message-data (data 5 :size 59))
