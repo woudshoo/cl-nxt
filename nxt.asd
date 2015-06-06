@@ -10,7 +10,7 @@
 (in-package :nxt.system)
 
 (defsystem :nxt
-  :depends-on ("cffi" "static-vectors" "babel" #+sbcl sb-bluetooth)
+  :depends-on ("cffi" "static-vectors" "babel" #+(and sb-bluetooth sbcl) sb-bluetooth)
   :version "0.0.2"
   :description "Implements the Lego Mindstorm NXT interface over Bluetooth, USB or a TCP proxy."
   :author "David Lichteblau, Willem Rein Oudshoorn <woudshoo@xs4all.nl>"

@@ -9,13 +9,13 @@
 
 (defun open-bluetooth-nxt (device &key (if-does-not-exist :error))
   (let ((connection
-	 #-sbcl
+	 #-(and sb-bluetooth sbcl)
 	  (open device
 		:direction :io
 		:element-type  '(unsigned-byte 8)
 		:if-does-not-exist if-does-not-exist
 		:if-exists :overwrite)
-	  #+sbcl
+	  #+(and sb-bluetooth sbcl)
 	  (sb-bluetooth:open-rfcomm-channel
 	   device ;e.g. "00:16:53:17:76:19"
 	   1
